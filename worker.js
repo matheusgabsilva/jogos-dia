@@ -7,6 +7,7 @@
 // Main league IDs (same as in the original Apps Script)
 const LIGAS_PRINCIPAIS_IDS = [71, 72, 73, 13, 11, 39, 140, 135, 78, 61, 2, 3, 848];
 // Flag to show only games with transmission (set to true by default)
+// NOTE: Keeping variable for reference but disabling filter to show all games
 const APENAS_COM_TRANSMISSAO = true;
 
 export default {
@@ -131,27 +132,8 @@ export default {
         }
       });
 
-      // Filter to only games with transmission if flag is set
-      if (APENAS_COM_TRANSMISSAO) {
-        const jogosComTransmissao = listaJogos.filter(j =>
-          j.transmissao &&
-          !j.transmissao.toLowerCase().includes('sem transmissão') &&
-          !j.transmissao.toLowerCase().includes('não informado')
-        );
-        if (jogosComTransmissao.length === 0) {
-          // No games with transmission - return header rows only
-          const headerTitle = [`Nenhum jogo com transmissão confirmada para hoje (${hojeFormatado}).`];
-          const colunas = ['Horário', 'Liga / Torneio', 'Fase / Rodada', 'Mandante', 'Placar', 'Visitante', 'Status', 'Onde Assistir (Brasil)'];
-          return new Response(JSON.stringify([headerTitle, colunas]), {
-            headers: {
-              'Content-Type': 'application/json',
-              'Access-Control-Allow-Origin': '*',
-            },
-          });
-        }
-        listaJogos.length = 0; // clear array
-        listaJogos.push(...jogosComTransmissao);
-      }
+      // REMOVED: Filter to only games with transmission flag
+      // Now we show all games regardless of transmission info
 
       // Sort by time
       listaJogos.sort((a, b) => a.horario.localeCompare(b.horario));
