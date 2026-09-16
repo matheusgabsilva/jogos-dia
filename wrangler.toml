@@ -3,10 +3,6 @@ main = "worker.js"
 compatibility_date = "2024-09-16"
 
 [vars]
-# These are placeholder values. In production, you would set these via `wrangler secret put` or in the Cloudflare dashboard.
-API_KEY_FOOTBALL = "your_api_football_key_here"
-GEMINI_API_KEY = "your_gemini_api_key_here"
-
 # Optional: set to true if you want to show only games with transmission
 APENAS_COM_TRANSMISSAO = true
 
