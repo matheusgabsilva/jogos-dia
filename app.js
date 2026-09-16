@@ -36,6 +36,7 @@ function fetchGames() {
             }
             try {
                 const data = JSON.parse(text);
+                console.log("Dados recebidos da API:", data);
                 return data;
             } catch (e) {
                 throw new Error(`Resposta inválida (não JSON): ${text.substring(0, 200)}`);
