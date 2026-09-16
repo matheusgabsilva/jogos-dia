@@ -261,8 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    fetchGames();
     // Add event listeners after DOM is loaded
     document.getElementById('searchInput').addEventListener('input', filterGames);
     document.getElementById('leagueFilter').addEventListener('change', filterGames);
+    document.getElementById('btn-fetch-games').addEventListener('click', fetchGames);
 });
