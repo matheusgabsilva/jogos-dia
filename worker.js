@@ -66,7 +66,8 @@ export default {
 
       const footballData = await footballResponse.json();
       // If API-Football returns errors (rate limit, invalid token, etc.), return friendly message
-      if (footballData.errors && Object.keys(footballData.errors).length > 0) {
+      const hasErrors = footballData.errors && (Array.isArray(footballData.errors) ? footballData.errors.length > 0 : Object.keys(footballData.errors).length > 0);
+      if (hasErrors) {
         return new Response(JSON.stringify([
           ["⚠️ Limite de consultas da API atingido. Aguarde 60 segundos e tente novamente."],
           []
