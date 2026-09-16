@@ -92,29 +92,62 @@ function renderGames(gamesToRender) {
     gamesGrid.innerHTML = '';
 
     if (gamesToRender.length === 0) {
-        gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full col-span-3">Nenhum jogo encontrado.</p>';
+        gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full">Nenhum jogo encontrado.</p>';
         return;
     }
 
+    // Group by league (index 1)
+    const grouped = new Map();
     gamesToRender.forEach(game => {
-        const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
-        const card = document.createElement('div');
-        card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full';
-        card.innerHTML = `
-            <div class="mb-2 flex justify-between text-sm">
-                <span class="font-medium text-teal-700">${liga}</span>
-                <span class="text-gray-500">${horario}</span>
-            </div>
-            <div class="flex-grow flex flex-col justify-between">
-                <div class="text-xl font-bold text-center mb-2">
-                    ${mandante} <span class="text-gray-500 mx-2">${placar}</span> ${visitante}
+        const liga = game[1];
+        if (!grouped.has(liga)) {
+            grouped.set(liga, []);
+        }
+        grouped.get(liga).push(game);
+    });
+
+    // Sort leagues alphabetically
+    const sortedLeagues = Array.from(grouped.keys()).sort();
+
+    sortedLeagues.forEach(liga => {
+        const ligaGames = grouped.get(liga);
+
+        // Create section container
+        const section = document.createElement('div');
+
+        // League title
+        const title = document.createElement('h2');
+        title.className = 'text-xl font-bold text-slate-700 border-b-2 border-emerald-500 pb-2 mb-4 mt-8 flex items-center gap-2';
+        title.innerHTML = `⚽ ${liga}`;
+        section.appendChild(title);
+
+        // Grid for games of this league
+        const gamesContainer = document.createElement('div');
+        gamesContainer.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
+
+        // Create cards for each game in this league
+        ligaGames.forEach(game => {
+            const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full';
+
+            // Card content: horario at top right, then confronto, then transmissao
+            card.innerHTML = `
+                <div class="mb-2 text-sm text-right">${horario}</div>
+                <div class="flex-grow flex flex-col justify-between">
+                    <div class="text-xl font-bold text-center mb-2">
+                        ${mandante} <span class="text-gray-500 mx-2">${placar}</span> ${visitante}
+                    </div>
                 </div>
-            </div>
-            <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center">
-                ${formatTransmissao(transmissao)}
-            </div>
-        `;
-        gamesGrid.appendChild(card);
+                <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center">
+                    ${formatTransmissao(transmissao)}
+                </div>
+            `;
+            gamesContainer.appendChild(card);
+        });
+
+        section.appendChild(gamesContainer);
+        gamesGrid.appendChild(section);
     });
 }
 
