@@ -1,4 +1,4 @@
-const API_URL = 'https://your-worker-subdomain.your-worker-account.workers.dev/'; // REPLACE WITH ACTUAL WORKER URL AFTER DEPLOYMENT
+const API_URL = 'https://jogos-do-dia-api.matheusgabsilva.workers.dev';; // REPLACE WITH ACTUAL WORKER URL AFTER DEPLOYMENT
 let allGames = [];
 let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
 const channelLogos = {
