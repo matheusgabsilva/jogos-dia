@@ -42,6 +42,20 @@ export default {
         }
       );
 
+      // Handle rate limit (429) specifically
+      if (footballResponse.status === 429) {
+        return new Response(JSON.stringify([
+          ["Limite de consultas da API atingido. Aguarde 1 minuto e clique em buscar novamente."],
+          []
+        ]), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+          status: 429,
+        });
+      }
+
       if (!footballResponse.ok) {
         throw new Error(`API-Football error: ${footballResponse.status}`);
       }

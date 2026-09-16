@@ -2,9 +2,9 @@ name = "jogos-do-dia-api"
 main = "worker.js"
 compatibility_date = "2024-09-16"
 
-[vars]
-# Optional: set to true if you want to show only games with transmission
-APENAS_COM_TRANSMISSAO = true
+routes = [
+  { pattern = "api.matheusgabsilva.digital", custom_domain = true }
+]
 
-[env.production]
-# Production-specific vars if needed
+[vars]
+APENAS_COM_TRANSMISSAO = true
