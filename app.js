@@ -26,11 +26,17 @@ function fetchGames() {
     gamesGrid.innerHTML = '';
 
     fetch(API_URL)
-        .then(response => {
+        .then(async response => {
+            const text = await response.text();
             if (!response.ok) {
-                throw new Error(`Erro na rede: ${response.status}`);
+                throw new Error(`Erro na rede: ${response.status} - ${text.substring(0, 200)}`);
             }
-            return response.json();
+            try {
+                const data = JSON.parse(text);
+                return data;
+            } catch (e) {
+                throw new Error(`Resposta inválida (não JSON): ${text.substring(0, 200)}`);
+            }
         })
         .then(data => {
             loadingDiv.style.display = 'none';
@@ -43,7 +49,7 @@ function fetchGames() {
         .catch(error => {
             loadingDiv.style.display = 'none';
             gamesGrid.innerHTML = `<p class="text-red-500 text-center w-full">Erro ao carregar jogos: ${error.message}</p>`;
-            console.error(error);
+            console.error("Detalhes do erro na API:", error);
         });
 }
 
