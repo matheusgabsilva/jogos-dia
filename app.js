@@ -64,7 +64,7 @@ function populateLeagues(games) {
 
 function formatTransmissao(transmissaoStr) {
     if (!transmissaoStr || transmissaoStr.toLowerCase().includes('sem transmissão') || transmissaoStr.toLowerCase().includes('não informado')) {
-        return '<span class="text-gray-500 italic">Sem transmissão</span>';
+        return '<span class="text-gray-500 italic dark:text-slate-400">Sem transmissão</span>';
     }
 
     const channels = transmissaoStr.split(',').map(channel => channel.trim());
@@ -80,7 +80,7 @@ function formatTransmissao(transmissaoStr) {
             }
         }
         if (!found) {
-            logoElements.push(`<span class="text-gray-600">${channel}</span>`);
+            logoElements.push(`<span class="text-gray-600 dark:text-slate-400">${channel}</span>`);
         }
     });
 
@@ -92,7 +92,7 @@ function renderGames(gamesToRender) {
     gamesGrid.innerHTML = '';
 
     if (gamesToRender.length === 0) {
-        gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full">Nenhum jogo encontrado.</p>';
+        gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full dark:text-slate-400">Nenhum jogo encontrado.</p>';
         return;
     }
 
@@ -117,7 +117,7 @@ function renderGames(gamesToRender) {
 
         // League title
         const title = document.createElement('h2');
-        title.className = 'text-xl font-bold text-slate-700 border-b-2 border-emerald-500 pb-2 mb-4 mt-8 flex items-center gap-2';
+        title.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
         title.innerHTML = `⚽ ${liga}`;
         section.appendChild(title);
 
@@ -129,17 +129,17 @@ function renderGames(gamesToRender) {
         ligaGames.forEach(game => {
             const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
             const card = document.createElement('div');
-            card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full';
+            card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700';
 
             // Card content: horario at top right, then confronto, then transmissao
             card.innerHTML = `
                 <div class="mb-2 text-sm text-right">${horario}</div>
                 <div class="flex-grow flex flex-col justify-between">
-                    <div class="text-xl font-bold text-center mb-2">
-                        ${mandante} <span class="text-gray-500 mx-2">${placar}</span> ${visitante}
+                    <div class="text-xl font-bold text-center mb-2 dark:text-slate-100">
+                        ${mandante} <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span> ${visitante}
                     </div>
                 </div>
-                <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center">
+                <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center dark:bg-emerald-900 dark:text-emerald-200">
                     ${formatTransmissao(transmissao)}
                 </div>
             `;
@@ -169,6 +169,34 @@ function filterGames() {
 
 // Execute when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Dark mode initialization
+    const themeToggle = document.getElementById('theme-toggle');
+    const htmlElement = document.documentElement;
+
+    // Check localStorage or system preference
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+        htmlElement.classList.add('dark');
+        themeToggle.textContent = '☀️';
+    } else {
+        htmlElement.classList.remove('dark');
+        themeToggle.textContent = '🌙';
+    }
+
+    // Theme toggle event listener
+    themeToggle.addEventListener('click', () => {
+        htmlElement.classList.toggle('dark');
+        if (htmlElement.classList.contains('dark')) {
+            themeToggle.textContent = '☀️';
+            localStorage.setItem('theme', 'dark');
+        } else {
+            themeToggle.textContent = '🌙';
+            localStorage.setItem('theme', 'light');
+        }
+    });
+
     fetchGames();
     // Add event listeners after DOM is loaded
     document.getElementById('searchInput').addEventListener('input', filterGames);
