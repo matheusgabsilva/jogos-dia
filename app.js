@@ -1,4 +1,4 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbyeIhHH5-LxPr4HGM20Z6RYr-AvXmRPr9ftj8p4Sbz3O0M1vYSStjl_X7XNdTz7zeOQ/exec';
+const API_URL = 'https://your-worker-subdomain.your-worker-account.workers.dev/'; // REPLACE WITH ACTUAL WORKER URL AFTER DEPLOYMENT
 let allGames = [];
 let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
 const channelLogos = {
