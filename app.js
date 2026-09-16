@@ -1,5 +1,6 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbyeIhHH5-LxPr4HGM20Z6RYr-AvXmRPr9ftj8p4Sbz3O0M1vYSStjl_X7XNdTz7zeOQ/exec';
 let allGames = [];
+let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
 const channelLogos = {
     'globo': 'https://upload.wikimedia.org/wikipedia/commons/2/24/TV_Globo_logo.svg',
     'sportv': 'https://upload.wikimedia.org/wikipedia/commons/3/33/SporTV_logo.svg',
@@ -87,6 +88,44 @@ function formatTransmissao(transmissaoStr) {
     return logoElements.join(' ');
 }
 
+function toggleFavorite(teamName) {
+    // Escape single quotes in teamName for storage? We store as is.
+    const index = favoriteTeams.indexOf(teamName);
+    if (index === -1) {
+        favoriteTeams.push(teamName);
+    } else {
+        favoriteTeams.splice(index, 1);
+    }
+    localStorage.setItem('favoriteTeams', JSON.stringify(favoriteTeams));
+    filterGames(); // re-render immediately
+}
+
+function createCardElement(game) {
+    const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700';
+    const isFavMand = favoriteTeams.includes(mandante);
+    const isFavVisit = favoriteTeams.includes(visitante);
+    // Escape single quotes for inline onclick
+    const mandanteEscaped = mandante.replace(/'/g, "\\'");
+    const visitanteEscaped = visitante.replace(/'/g, "\\'");
+    card.innerHTML = `
+        <div class="mb-2 flex justify-between items-center text-sm">
+            <span class="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded truncate max-w-[50%]">${liga}</span>
+            <span>${horario}</span>
+        </div>
+        <div class="flex-grow flex flex-col justify-between">
+            <div class="text-xl font-bold text-center mb-2 dark:text-slate-100">
+                <span onclick="toggleFavorite('${mandanteEscaped}')" class="cursor-pointer text-xl">${isFavMand ? '⭐' : '☆'}</span> ${mandante} <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span> <span onclick="toggleFavorite('${visitanteEscaped}')" class="cursor-pointer text-xl">${isFavVisit ? '⭐' : '☆'}</span> ${visitante}
+            </div>
+        </div>
+        <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center dark:bg-emerald-900 dark:text-emerald-200">
+            ${formatTransmissao(transmissao)}
+        </div>
+    `;
+    return card;
+}
+
 function renderGames(gamesToRender) {
     const gamesGrid = document.getElementById('games-grid');
     gamesGrid.innerHTML = '';
@@ -96,59 +135,78 @@ function renderGames(gamesToRender) {
         return;
     }
 
-    // Group by league (index 1)
-    const grouped = new Map();
+    // Separate favorites and others
+    const favoriteGames = [];
+    const otherGames = [];
+
     gamesToRender.forEach(game => {
-        const liga = game[1];
-        if (!grouped.has(liga)) {
-            grouped.set(liga, []);
+        const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
+        if (favoriteTeams.includes(mandante) || favoriteTeams.includes(visitante)) {
+            favoriteGames.push(game);
+        } else {
+            otherGames.push(game);
         }
-        grouped.get(liga).push(game);
     });
 
-    // Sort leagues alphabetically
-    const sortedLeagues = Array.from(grouped.keys()).sort();
+    // Render favorite games section if any
+    if (favoriteGames.length > 0) {
+        const favSection = document.createElement('div');
+        const favTitle = document.createElement('h2');
+        favTitle.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
+        favTitle.innerHTML = '⭐ Seus Jogos';
+        favSection.appendChild(favTitle);
 
-    sortedLeagues.forEach(liga => {
-        const ligaGames = grouped.get(liga);
+        const favGrid = document.createElement('div');
+        favGrid.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
 
-        // Create section container
-        const section = document.createElement('div');
-
-        // League title
-        const title = document.createElement('h2');
-        title.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
-        title.innerHTML = `⚽ ${liga}`;
-        section.appendChild(title);
-
-        // Grid for games of this league
-        const gamesContainer = document.createElement('div');
-        gamesContainer.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
-
-        // Create cards for each game in this league
-        ligaGames.forEach(game => {
-            const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
-            const card = document.createElement('div');
-            card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700';
-
-            // Card content: horario at top right, then confronto, then transmissao
-            card.innerHTML = `
-                <div class="mb-2 text-sm text-right">${horario}</div>
-                <div class="flex-grow flex flex-col justify-between">
-                    <div class="text-xl font-bold text-center mb-2 dark:text-slate-100">
-                        ${mandante} <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span> ${visitante}
-                    </div>
-                </div>
-                <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center dark:bg-emerald-900 dark:text-emerald-200">
-                    ${formatTransmissao(transmissao)}
-                </div>
-            `;
-            gamesContainer.appendChild(card);
+        favoriteGames.forEach(game => {
+            favGrid.appendChild(createCardElement(game));
         });
 
-        section.appendChild(gamesContainer);
-        gamesGrid.appendChild(section);
-    });
+        favSection.appendChild(favGrid);
+        gamesGrid.appendChild(favSection);
+    }
+
+    // Render other games grouped by league
+    if (otherGames.length > 0) {
+        // Group by league (index 1)
+        const grouped = new Map();
+        otherGames.forEach(game => {
+            const liga = game[1];
+            if (!grouped.has(liga)) {
+                grouped.set(liga, []);
+            }
+            grouped.get(liga).push(game);
+        });
+
+        // Sort leagues alphabetically
+        const sortedLeagues = Array.from(grouped.keys()).sort();
+
+        sortedLeagues.forEach(liga => {
+            const ligaGames = grouped.get(liga);
+
+            // Create section container
+            const section = document.createElement('div');
+
+            // League title
+            const title = document.createElement('h2');
+            title.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
+            title.innerHTML = `⚽ ${liga}`;
+            section.appendChild(title);
+
+            // Grid for games of this league
+            const gamesContainer = document.createElement('div');
+            gamesContainer.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
+
+            // Create cards for each game in this league
+            ligaGames.forEach(game => {
+                gamesContainer.appendChild(createCardElement(game));
+            });
+
+            section.appendChild(gamesContainer);
+            gamesGrid.appendChild(section);
+        });
+    }
 }
 
 function filterGames() {
