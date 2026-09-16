@@ -25,7 +25,10 @@ function fetchGames() {
     loadingDiv.style.display = 'block';
     gamesGrid.innerHTML = '';
 
-    fetch(API_URL)
+    // Cache-buster: add timestamp to force fresh request
+    const urlWithCacheBuster = `${API_URL}?t=${new Date().getTime()}`;
+
+    fetch(urlWithCacheBuster)
         .then(async response => {
             const text = await response.text();
             if (!response.ok) {

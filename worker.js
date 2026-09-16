@@ -34,18 +34,22 @@ export default {
       const hojeIso = today.toLocaleDateString('en-CA', options); // yyyy-mm-dd
       const hojeFormatado = today.toLocaleDateString('pt-BR', options); // dd/mm/yyyy
 
-      // Fetch from API-Football
+      // Fetch from API-Football with cache control headers
       const footballResponse = await fetch(
         `https://v3.football.api-sports.io/fixtures?date=${hojeIso}&timezone=America/Sao_Paulo`,
         {
-          headers: { 'x-apisports-key': env.API_KEY_FOOTBALL },
+          headers: {
+            'x-apisports-key': env.API_KEY_FOOTBALL,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
         }
       );
 
       // Handle rate limit (429) specifically
       if (footballResponse.status === 429) {
         return new Response(JSON.stringify([
-          ["Limite de consultas da API atingido. Aguarde 1 minuto e clique em buscar novamente."],
+          ["⚠️ Limite de consultas da API atingido. Aguarde 60 segundos e tente novamente."],
           []
         ]), {
           headers: {
@@ -61,8 +65,18 @@ export default {
       }
 
       const footballData = await footballResponse.json();
+      // If API-Football returns errors (rate limit, invalid token, etc.), return friendly message
       if (footballData.errors && Object.keys(footballData.errors).length > 0) {
-        throw new Error(`API-Football returned errors: ${JSON.stringify(footballData.errors)}`);
+        return new Response(JSON.stringify([
+          ["⚠️ Limite de consultas da API atingido. Aguarde 60 segundos e tente novamente."],
+          []
+        ]), {
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+          status: 200, // Return 200 so frontend doesn't treat as error
+        });
       }
 
       const fixtures = footballData.response || [];
