@@ -131,7 +131,7 @@ export default {
       console.log(`[Jogos do Dia] GEMINI_API_KEY presente: !!${env.GEMINI_API_KEY}`);
 
       // Structure base list - include leagueId for fallback
-      const listaJogos = jogosFiltrados.map((item, index) => ({
+      let listaJogos = jogosFiltrados.map((item, index) => ({
         idLocal: index + 1,
         horario: item.fixture.date ? item.fixture.date.substring(11, 16) : '--:--',
         liga: item.league.name || 'Outros',
