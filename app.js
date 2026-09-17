@@ -1,6 +1,8 @@
 const API_URL = 'https://api.matheusgabsilva.digital'; // REPLACE WITH ACTUAL WORKER URL AFTER DEPLOYMENT
 let allGames = [];
 let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
+let autoRefreshInterval = null; // Stores the setInterval ID for auto-refresh
+let autoRefreshSecondsLeft = 0; // Countdown for header display
 const channelLogos = {
     'globo': 'https://upload.wikimedia.org/wikipedia/commons/2/24/TV_Globo_logo.svg',
     'sportv': 'https://upload.wikimedia.org/wikipedia/commons/3/33/SporTV_logo.svg',
@@ -14,8 +16,8 @@ const channelLogos = {
     'record': 'https://upload.wikimedia.org/wikipedia/commons/6/6c/Record_logo.svg',
     'band': 'https://upload.wikimedia.org/wikipedia/commons/4/4b/Band_logo.svg',
     'youtube': 'https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg',
-    'cazé': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Caz%C3%A9TV_logo.png/320px-Caz%C3%A9TV_logo.png',
-    'caze': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Caz%C3%A9TV_logo.png/320px-Caz%C3%A9TV_logo.png'
+    'cazé': 'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/200px-Caz%C3%A9TV.png',
+    'caze': 'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/200px-Caz%C3%A9TV.png'
 };
 
 function fetchGames() {
@@ -113,16 +115,49 @@ function toggleFavorite(teamName) {
 function createCardElement(game) {
     const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700';
+    card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700 relative';
     const isFavMand = favoriteTeams.includes(mandante);
     const isFavVisit = favoriteTeams.includes(visitante);
     // Escape single quotes for inline onclick
     const mandanteEscaped = mandante.replace(/'/g, "\\'");
     const visitanteEscaped = visitante.replace(/'/g, "\\'");
+
+    // Status badge mapping
+    let statusText = 'Não iniciado';
+    let statusClass = 'bg-gray-200 text-gray-800';
+    let statusAnimation = '';
+
+    switch (status) {
+        case 'NS':
+            statusText = 'Não iniciado';
+            statusClass = 'bg-gray-200 text-gray-800';
+            break;
+        case '1H':
+        case '2H':
+        case 'ET':
+            statusText = 'Ao Vivo';
+            statusClass = 'bg-green-100 text-green-800 animate-pulse';
+            break;
+        case 'HT':
+            statusText = 'Intervalo';
+            statusClass = 'bg-yellow-100 text-yellow-800';
+            break;
+        case 'FT':
+        case 'AET':
+        case 'PEN':
+            statusText = 'Encerrado';
+            statusClass = 'bg-slate-200 text-slate-800';
+            break;
+        default:
+            statusText = status;
+            statusClass = 'bg-gray-200 text-gray-800';
+    }
+
     card.innerHTML = `
-        <div class="mb-2 flex justify-between items-center text-sm">
+        <div class="mb-2 flex justify-between items-center text-sm position-relative">
             <span class="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded truncate max-w-[50%]">${liga}</span>
             <span>${horario}</span>
+            <span class="absolute right-0 top-0 mt-2 mr-2 px-2 py-1 text-xs font-bold rounded ${statusClass} ${statusAnimation}">${statusText}</span>
         </div>
         <div class="flex-grow flex flex-col justify-between">
             <div class="text-xl font-bold text-center mb-2 dark:text-slate-100">
@@ -217,7 +252,84 @@ function renderGames(gamesToRender) {
             gamesGrid.appendChild(section);
         });
     }
+
+// Auto-refresh for live games
+    const hasLiveGames = gamesToRender.some(game => {
+        const status = game[6]; // status is at index 6
+        return ['1H', '2H', 'ET', 'HT'].includes(status);
+    });
+
+    if (hasLiveGames && !autoRefreshInterval) {
+        // Start auto-refresh
+        autoRefreshInterval = setInterval(() => {
+            fetchGames();
+            // Update the header indicator
+            updateAutoRefreshHeader(60);
+        }, 60000);
+
+        // Show initial header indicator
+        updateAutoRefreshHeader(60);
+    } else if (!hasLiveGames && autoRefreshInterval) {
+        // Stop auto-refresh if no live games
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        removeAutoRefreshHeader();
+    }
+
+// Auto-refresh header functions
+function updateAutoRefreshHeader(seconds) {
+    autoRefreshSecondsLeft = seconds;
+    const header = document.getElementById('auto-refresh-header');
+    if (!header) {
+        // Create header element
+        const headerDiv = document.createElement('div');
+        headerDiv.id = 'auto-refresh-header';
+        headerDiv.className = 'text-xs text-blue-600 dark:text-blue-400 mb-2';
+        headerDiv.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
+
+        // Insert after the loading div or at the top of games container
+        const loadingDiv = document.getElementById('loading');
+        const gamesGrid = document.getElementById('games-grid');
+        if (loadingDiv && loadingDiv.parentNode) {
+            loadingDiv.parentNode.insertBefore(headerDiv, loadingDiv.nextSibling);
+        } else if (gamesGrid && gamesGrid.parentNode) {
+            gamesGrid.parentNode.insertBefore(headerDiv, gamesGrid);
+        } else {
+            document.body.insertBefore(headerDiv, document.body.firstChild);
+        }
+    } else {
+        header.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
+    }
 }
+
+function removeAutoRefreshHeader() {
+    const header = document.getElementById('auto-refresh-header');
+    if (header) {
+        header.remove();
+    }
+    autoRefreshSecondsLeft = 0;
+}
+
+// Update fetchGames to handle countdown
+const originalFetchGames = fetchGames;
+function fetchGames() {
+    // Update countdown if active
+    if (autoRefreshInterval && autoRefreshSecondsLeft > 0) {
+        autoRefreshSecondsLeft--;
+        const header = document.getElementById('auto-refresh-header');
+        if (header) {
+            header.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
+        }
+
+        // If countdown reaches 0, it will be updated on next interval tick
+    }
+
+    // Call original fetchGames
+    return originalFetchGames.call(this);
+}
+
+// Rebind fetchGames to maintain correct context
+window.fetchGames = fetchGames;
 
 function filterGames() {
     const searchInput = document.getElementById('searchInput').value.trim().toLowerCase();

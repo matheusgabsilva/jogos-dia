@@ -5,10 +5,27 @@
  */
 
 // Main league IDs (same as in the original Apps Script)
-const LIGAS_PRINCIPAIS_IDS = [71, 72, 73, 13, 11, 39, 140, 135, 78, 61, 2, 3, 848];
+const LIGAS_PRINCIPAIS_IDS = [71, 72, 73, 13, 11, 39, 140, 135, 78, 61, 2, 3, 848, 75];
 // Flag to show only games with transmission (set to true by default)
 // NOTE: Keeping variable for reference but disabling filter to show all games
 const APENAS_COM_TRANSMISSAO = true;
+// Fallback de transmissões por liga (quando o Gemini falhar ou retornar vazio)
+const TRANSMISSOES_FALLBACK = {
+  71: 'Premiere, SporTV',           // Brasileirão Série A
+  72: 'SporTV, Premiere',           // Brasileirão Série B
+  73: 'DAZN',                        // Brasileirão Série C
+  13: 'Paramount+, ESPN',            // Copa Libertadores
+  11: 'Paramount+',                  // Copa Sudamericana
+  2:  'Max, SporTV',                 // Champions League
+  3:  'Max, SporTV',                 // UEFA Europa League
+  848:'Max, SporTV',                 // UEFA Conference League
+  39: 'ESPN, Disney+',               // Premier League
+  140:'ESPN, Disney+',               // La Liga
+  135:'ESPN, Disney+',               // Serie A (Itália)
+  78: 'SporTV',                      // Bundesliga
+  61: 'CazéTV, YouTube',             // Ligue 1
+  75: 'SporTV, Premiere',            // Copa do Brasil
+};
 
 export default {
   async fetch(request, env) {
@@ -108,7 +125,12 @@ export default {
         });
       }
 
-      // Structure base list
+      // Structured logs at the beginning of fetch handler
+      const ligasIds = [...new Set(jogosFiltrados.map(item => item.league.id))];
+      console.log(`[Jogos do Dia] Processando ${jogosFiltrados.length} jogos das ligas: ${ligasIds.join(', ')}`);
+      console.log(`[Jogos do Dia] GEMINI_API_KEY presente: !!${env.GEMINI_API_KEY}`);
+
+      // Structure base list - include leagueId for fallback
       const listaJogos = jogosFiltrados.map((item, index) => ({
         idLocal: index + 1,
         horario: item.fixture.date ? item.fixture.date.substring(11, 16) : '--:--',
@@ -118,6 +140,7 @@ export default {
         visitante: item.teams.away.name || 'Visitante',
         placar: `${item.goals.home !== null ? item.goals.home : '-'} x ${item.goals.away !== null ? item.goals.away : '-'}`,
         status: item.fixture.status.short || 'NS',
+        leagueId: item.league.id,
         transmissao: 'Consultando...',
       }));
 
@@ -125,15 +148,35 @@ export default {
       const mapaTransmissoes = await obterTransmissoesGemini(listaJogos, hojeFormatado, env.GEMINI_API_KEY);
 
       listaJogos.forEach(j => {
-        if (mapaTransmissoes[j.idLocal]) {
-          j.transmissao = mapaTransmissoes[j.idLocal];
-        } else {
-          j.transmissao = 'Não informado';
+        let transmissao = mapaTransmissoes[j.idLocal] || '';
+
+        // If Gemini returned empty or "Não informado"/"Sem transmissão", try fallback
+        if (!transmissao ||
+            transmissao.toLowerCase() === 'não informado' ||
+            transmissao.toLowerCase() === 'sem transmissão') {
+          // Use fallback by leagueId if available
+          if (j.leagueId && TRANSMISSOES_FALLBACK[j.leagueId]) {
+            transmissao = TRANSMISSOES_FALLBACK[j.leagueId];
+          }
         }
+
+        // If still empty, set to 'Não informado'
+        j.transmissao = transmissao || 'Não informado';
       });
 
-      // REMOVED: Filter to only games with transmission flag
-      // Now we show all games regardless of transmission info
+      // Read APENAS_COM_TRANSMISSAO from environment variable
+      const apenasComTransmissao = env.APENAS_COM_TRANSMISSAO === 'true' || env.APENAS_COM_TRANSMISSAO === true;
+
+      // Filter to only games with transmission if flag is true
+      if (apenasComTransmissao) {
+        const jogosComTransmissaoOriginal = listaJogos.length;
+        listaJogos = listaJogos.filter(j =>
+          j.transmissao &&
+          j.transmissao.toLowerCase() !== 'não informado' &&
+          j.transmissao.toLowerCase() !== 'sem transmissão'
+        );
+        console.log(`Filtrados ${jogosComTransmissaoOriginal - listaJogos.length} jogos sem transmissão (restaram ${listaJogos.length})`);
+      }
 
       // Sort by time
       listaJogos.sort((a, b) => a.horario.localeCompare(b.horario));
@@ -200,43 +243,83 @@ Responda EXCLUSIVAMENTE em formato JSON puro, contendo uma lista de objetos com 
   {"id": 2, "ondeAssistir": "Sem transmissão"}
 ]`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.2
+  // Try the new model first, then fallback to 1.5-flash
+  const modelUrls = [
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
+  ];
+
+  for (let i = 0; i < modelUrls.length; i++) {
+    const url = modelUrls[i];
+    try {
+      // AbortController for timeout
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 25000);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2
+            // Note: removed responseMimeType
+          }
+        }),
+        signal: abortController.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        // Log detailed error for debugging
+        const errorBody = await response.text();
+        console.error(`Gemini API error (${response.status}): ${errorBody}`);
+        // If it's a 404 (model not found), try next model
+        if (response.status === 404 && i < modelUrls.length - 1) {
+          continue; // try next model
+        }
+        throw new Error(`Gemini API error: ${response.status}`);
+      }
+
+      const json = await response.json();
+      if (!json.candidates || !json.candidates[0].content) {
+        throw new Error('Unexpected response from Gemini');
+      }
+
+      let textoResposta = json.candidates[0].content.parts[0].text;
+      // Strip markdown code fences if present
+      if (textoResposta.startsWith('```json')) {
+        textoResposta = textoResposta.substring(7);
+      }
+      if (textoResposta.endsWith('```')) {
+        textoResposta = textoResposta.substring(0, textoResposta.length - 3);
+      }
+      textoResposta = textoResposta.trim();
+
+      const arrayResultados = JSON.parse(textoResposta);
+
+      const mapa = {};
+      arrayResultados.forEach(item => {
+        mapa[item.id] = item.ondeAssistir;
+      });
+
+      return mapa;
+    } catch (err) {
+      // If we have a timeout, err.name might be 'AbortError'
+      if (err.name === 'AbortError') {
+        console.error('Gemini API request timed out after 25 seconds');
+      } else {
+        console.error(`Erro ao consultar Gemini (tentativa ${i + 1}):`, err);
+      }
+      // If this was the last model, we break and return empty map
+      if (i === modelUrls.length - 1) {
+        console.error('Todos os modelos Gemini falharam');
+        return {};
+      }
+      // Otherwise, continue to next model
     }
-  };
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
-
-    const json = await response.json();
-    if (!json.candidates || !json.candidates[0].content) {
-      throw new Error('Unexpected response from Gemini');
-    }
-
-    const textoResposta = json.candidates[0].content.parts[0].text;
-    const arrayResultados = JSON.parse(textoResposta);
-
-    const mapa = {};
-    arrayResultados.forEach(item => {
-      mapa[item.id] = item.ondeAssistir;
-    });
-
-    return mapa;
-  } catch (e) {
-    console.error('Erro ao consultar Gemini:', e);
-    // Return empty map - transmissions will show as 'Não informado'
-    return {};
   }
+  // Should not reach here, but fallback
+  return {};
 }
