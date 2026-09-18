@@ -44,6 +44,7 @@ function fetchGames() {
         .then(data => {
             loadingDiv.style.display = 'none';
             const games = data.slice(2);
+            console.log("Total de jogos após slice:", games.length, "| Primeira linha:", data[0]);
             allGames = games;
             populateLeagues(allGames);
             renderGames(allGames);
