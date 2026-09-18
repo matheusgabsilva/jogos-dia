@@ -23,12 +23,12 @@ const channelLogos = {
     'record': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Record_logo.svg/320px-Record_logo.svg.png',
 };
 
-function fetchGames() {
+function fetchGames(force = false) {
     const loadingDiv = document.getElementById('loading');
     const gamesGrid = document.getElementById('games-grid');
     loadingDiv.style.display = 'block';
     gamesGrid.innerHTML = '';
-    const urlWithCacheBuster = `${API_URL}?t=${new Date().getTime()}`;
+    const urlWithCacheBuster = `${API_URL}?t=${new Date().getTime()}${force ? '&force=1' : ''}`;
     fetch(urlWithCacheBuster)
         .then(async response => {
             const text = await response.text();
@@ -252,5 +252,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('searchInput').addEventListener('input', filterGames);
     document.getElementById('leagueFilter').addEventListener('change', filterGames);
-    document.getElementById('btn-fetch-games').addEventListener('click', fetchGames);
+    const btnFetchGames = document.getElementById('btn-fetch-games');
+    btnFetchGames.addEventListener('click', fetchGames);
+    // Botão forçar refresh (discreto, abaixo do botão principal)
+    const forceBtn = document.createElement('button');
+    forceBtn.textContent = '↺ Forçar atualização';
+    forceBtn.className = 'text-xs text-gray-400 underline cursor-pointer bg-transparent border-none block mx-auto mt-1 dark:text-slate-500';
+    forceBtn.onclick = () => {
+        fetchGames(true);
+    };
+    btnFetchGames.insertAdjacentElement('afterend', forceBtn);
 });

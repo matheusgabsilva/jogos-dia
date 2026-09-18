@@ -52,6 +52,30 @@ export default {
       const hojeIso = today.toLocaleDateString('en-CA', options); // yyyy-mm-dd
       const hojeFormatado = today.toLocaleDateString('pt-BR', options); // dd/mm/yyyy
 
+      // Parse URL for force parameter
+      const url = new URL(request.url);
+      const forceRefresh = url.searchParams.get('force') === '1';
+
+      // Cache configuration
+      const CACHE_KEY = `jogos_${hojeIso}`;
+      const CACHE_TTL_SECONDS = 7200; // 2 horas
+
+      // Check cache first (unless force refresh)
+      if (env.JOGOS_CACHE && !forceRefresh) {
+        const cached = await env.JOGOS_CACHE.get(CACHE_KEY);
+        if (cached) {
+          console.log(`[CACHE HIT] Retornando dados cacheados para ${hojeIso}`);
+          return new Response(cached, {
+            headers: {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+              'X-Cache': 'HIT',
+            },
+          });
+        }
+        console.log(`[CACHE MISS] Buscando dados frescos para ${hojeIso}`);
+      }
+
       // Fetch from API-Football with cache control headers
       const footballResponse = await fetch(
         `https://v3.football.api-sports.io/fixtures?date=${hojeIso}&timezone=America/Sao_Paulo`,
@@ -199,10 +223,19 @@ export default {
         ]);
       });
 
-      return new Response(JSON.stringify(dadosTabela), {
+      const responseBody = JSON.stringify(dadosTabela);
+
+      // Save to KV cache
+      if (env.JOGOS_CACHE) {
+        await env.JOGOS_CACHE.put(CACHE_KEY, responseBody, { expirationTtl: CACHE_TTL_SECONDS });
+        console.log(`[CACHE SET] Dados salvos no KV para ${hojeIso} com TTL de ${CACHE_TTL_SECONDS}s`);
+      }
+
+      return new Response(responseBody, {
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
+          'X-Cache': 'MISS',
         },
       });
     } catch (error) {

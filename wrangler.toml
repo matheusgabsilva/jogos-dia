@@ -8,3 +8,7 @@ routes = [
 
 [vars]
 APENAS_COM_TRANSMISSAO = true
+
+[[kv_namespaces]]
+binding = "JOGOS_CACHE"
+id = "46379f04e4894b6e96c68d0e274c1219"
