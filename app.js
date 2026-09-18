@@ -93,8 +93,22 @@ function formatTransmissao(str){
   return str.split(',').map(ch=>ch.trim()).filter(Boolean).map(channel=>{
     let logo=null;
     const cl=channel.toLowerCase().replace(/\s+/g,'');
-    for(const[k,u]of Object.entries(channelLogos)){
-      if(cl===k||cl.startsWith(k)||channel.toLowerCase().startsWith(k)){logo=u;break;}
+    // 1. Tenta match exato sem espaços (ex: "sportv2" → 'sportv')
+    // 2. Tenta startsWith no original (ex: "SporTV 2" começa com "sportv")
+    // 3. Tenta includes como último recurso
+    for (const [k, u] of Object.entries(channelLogos)) {
+      const kl = k.toLowerCase();
+      if (cl === kl) { logo = u; break; }
+    }
+    if (!logo) {
+      for (const [k, u] of Object.entries(channelLogos)) {
+        if (channel.toLowerCase().startsWith(k.toLowerCase())) { logo = u; break; }
+      }
+    }
+    if (!logo) {
+      for (const [k, u] of Object.entries(channelLogos)) {
+        if (channel.toLowerCase().includes(k.toLowerCase())) { logo = u; break; }
+      }
     }
     const img=logo?`<img src="${logo}" alt="" class="h-3.5 w-auto inline-block flex-shrink-0" onerror="this.style.display='none'">`:'' ;
     return `<span class="inline-flex items-center gap-1 bg-slate-800 dark:bg-slate-700 text-slate-200 text-xs px-1.5 py-0.5 rounded font-medium">${img}<span>${channel}</span></span>`;
@@ -116,11 +130,16 @@ function getStatusBadge(s){
   return`<span class="text-xs text-slate-500">${s}</span>`;
 }
 
-function escudo(logo,nome){
-  const ini=nome.charAt(0);
-  const fallback=`<span class="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">${ini}</span>`;
-  if(!logo)return fallback;
-  return`<img src="${logo}" alt="${nome}" class="w-7 h-7 object-contain flex-shrink-0" onerror="this.outerHTML='${fallback.replace(/'/g,'"')}'" >`;
+function escudo(logo, nome) {
+  const ini = nome.charAt(0);
+  const fallback = `<span class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-300 flex-shrink-0">${ini}</span>`;
+  if (!logo) return fallback;
+  return `<span class="relative inline-flex flex-shrink-0" style="width:28px;height:28px">
+    <img src="${logo}" alt="" style="width:28px;height:28px;object-fit:contain"
+      onload="this.nextElementSibling.style.display='none'"
+      onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <span class="w-7 h-7 rounded-full bg-slate-700 text-slate-300 text-xs font-bold absolute inset-0 items-center justify-center" style="display:flex">${ini}</span>
+  </span>`;
 }
 
 function createGameRow(game){
@@ -131,29 +150,32 @@ function createGameRow(game){
   const vE=visitante.replace(/'/g,"\\'");
   const row=document.createElement('div');
   row.className='game-row flex items-center gap-2 sm:gap-3 px-3 py-2.5 rounded-lg transition-colors';
-  row.innerHTML=`
-    <div class="w-16 flex-shrink-0 text-center">
-      <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">${horario}</div>
-      <div class="mt-0.5">${getStatusBadge(status)}</div>
-    </div>
-    <div class="flex items-center gap-1.5 flex-1 justify-end min-w-0">
-      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate text-right">${mandante}</span>
-      ${escudo(logoM,mandante)}
-    </div>
-    <div class="flex-shrink-0 w-14 text-center">
-      <span class="text-base font-black text-slate-800 dark:text-white tracking-tight">${placar}</span>
-    </div>
-    <div class="flex items-center gap-1.5 flex-1 justify-start min-w-0">
-      ${escudo(logoV,visitante)}
-      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${visitante}</span>
-    </div>
-    <div class="flex-shrink-0 flex flex-col items-end gap-1 min-w-[90px] max-w-[150px]">
-      <div class="flex flex-wrap justify-end gap-1">${formatTransmissao(transmissao)}</div>
-      <div class="flex gap-1">
-        <button onclick="toggleFavorite('${mE}')" class="text-base p-1 hover:scale-125 transition-transform" style="min-width:28px;min-height:28px">${fM?'⭐':'☆'}</button>
-        <button onclick="toggleFavorite('${vE}')" class="text-base p-1 hover:scale-125 transition-transform" style="min-width:28px;min-height:28px">${fV?'⭐':'☆'}</button>
-      </div>
-    </div>`;
+  row.innerHTML = `
+  <div class="w-16 flex-shrink-0 text-center">
+    <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">${horario}</div>
+    <div class="mt-0.5">${getStatusBadge(status)}</div>
+  </div>
+
+  <div class="flex items-center gap-1.5 flex-1 justify-end min-w-0">
+    <button onclick="toggleFavorite('${mE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${mandante}">${fM?'⭐':'☆'}</button>
+    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate text-right">${mandante}</span>
+    ${escudo(logoM, mandante)}
+  </div>
+
+  <div class="flex-shrink-0 w-14 text-center">
+    <span class="text-base font-black text-slate-800 dark:text-white tracking-tight">${placar}</span>
+  </div>
+
+  <div class="flex items-center gap-1.5 flex-1 justify-start min-w-0">
+    ${escudo(logoV, visitante)}
+    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${visitante}</span>
+    <button onclick="toggleFavorite('${vE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${visitante}">${fV?'⭐':'☆'}</button>
+  </div>
+
+  <div class="flex-shrink-0 flex flex-wrap justify-end gap-1 min-w-[90px] max-w-[150px]">
+    ${formatTransmissao(transmissao)}
+  </div>
+`;
   return row;
 }
 
