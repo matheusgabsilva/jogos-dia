@@ -166,6 +166,9 @@ export default {
         status: item.fixture.status.short || 'NS',
         leagueId: item.league.id,
         transmissao: 'Consultando...',
+        logoMandante: item.teams.home.logo || '',
+        logoVisitante: item.teams.away.logo || '',
+        logoLiga: item.league.logo || '',
       }));
 
       // Batch call to Gemini for transmissions
@@ -220,6 +223,9 @@ export default {
           j.visitante,
           j.status,
           j.transmissao,
+          j.logoMandante,
+          j.logoVisitante,
+          j.logoLiga,
         ]);
       });
 

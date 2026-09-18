@@ -4,262 +4,245 @@ let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
 let autoRefreshInterval = null;
 let autoRefreshCountdownInterval = null;
 let autoRefreshSecondsLeft = 0;
+let cooldownInterval = null;
+let cooldownSecondsLeft = 0;
+let filtersOpen = false;
 
 const channelLogos = {
-    'globo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/TV_Globo_logo.svg/320px-TV_Globo_logo.svg.png',
-    'sportv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/SporTV_logo.svg/320px-SporTV_logo.svg.png',
-    'premiere': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Premiere_logo_2021.svg/320px-Premiere_logo_2021.svg.png',
-    'espn': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/ESPN_logo.svg/320px-ESPN_logo.svg.png',
-    'disney': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Disney%2B_logo.svg/320px-Disney%2B_logo.svg.png',
-    'max': 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Max_logo.svg/320px-Max_logo.svg.png',
-    'prime': 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Amazon_Prime_Video_logo.svg/320px-Amazon_Prime_Video_logo.svg.png',
-    'paramount': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Paramount_Plus.svg/320px-Paramount_Plus.svg.png',
-    'sbt': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/SBT_logo_2021.svg/320px-SBT_logo_2021.svg.png',
-    'band': 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Band_logo.svg/320px-Band_logo.svg.png',
-    'youtube': 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/YouTube_Logo_2017.svg/320px-YouTube_Logo_2017.svg.png',
-    'cazé': 'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/200px-Caz%C3%A9TV.png',
-    'caze': 'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/200px-Caz%C3%A9TV.png',
-    'dazn': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/DAZN_-_Logo.svg/320px-DAZN_-_Logo.svg.png',
-    'record': 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Record_logo.svg/320px-Record_logo.svg.png',
+  'globo':'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/TV_Globo_logo.svg/120px-TV_Globo_logo.svg.png',
+  'sportv':'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/SporTV_logo.svg/120px-SporTV_logo.svg.png',
+  'premiere':'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/Premiere_logo_2021.svg/120px-Premiere_logo_2021.svg.png',
+  'espn':'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/ESPN_logo.svg/120px-ESPN_logo.svg.png',
+  'disney':'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Disney%2B_logo.svg/120px-Disney%2B_logo.svg.png',
+  'max':'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/Max_logo.svg/120px-Max_logo.svg.png',
+  'prime':'https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/Amazon_Prime_Video_logo.svg/120px-Amazon_Prime_Video_logo.svg.png',
+  'paramount':'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Paramount_Plus.svg/120px-Paramount_Plus.svg.png',
+  'sbt':'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/SBT_logo_2021.svg/120px-SBT_logo_2021.svg.png',
+  'band':'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Band_logo.svg/120px-Band_logo.svg.png',
+  'youtube':'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b8/YouTube_Logo_2017.svg/120px-YouTube_Logo_2017.svg.png',
+  'dazn':'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/DAZN_-_Logo.svg/120px-DAZN_-_Logo.svg.png',
+  'cazé':'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/120px-Caz%C3%A9TV.png',
+  'caze':'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/120px-Caz%C3%A9TV.png',
+  'cazetv':'https://upload.wikimedia.org/wikipedia/pt/thumb/6/68/Caz%C3%A9TV.png/120px-Caz%C3%A9TV.png',
+  'record':'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Record_logo.svg/120px-Record_logo.svg.png',
 };
 
-function fetchGames(force = false) {
-    const loadingDiv = document.getElementById('loading');
-    const gamesGrid = document.getElementById('games-grid');
-    loadingDiv.style.display = 'block';
-    gamesGrid.innerHTML = '';
-    const urlWithCacheBuster = `${API_URL}?t=${new Date().getTime()}${force ? '&force=1' : ''}`;
-    fetch(urlWithCacheBuster)
-        .then(async response => {
-            const text = await response.text();
-            if (!response.ok) throw new Error(`Erro na rede: ${response.status} - ${text.substring(0, 200)}`);
-            try {
-                const data = JSON.parse(text);
-                console.log("Dados recebidos da API:", data);
-                return data;
-            } catch (e) {
-                throw new Error(`Resposta inválida (não JSON): ${text.substring(0, 200)}`);
-            }
-        })
-        .then(data => {
-            loadingDiv.style.display = 'none';
-            const games = data.slice(2);
-            console.log("Total de jogos após slice:", games.length, "| Primeira linha:", data[0]);
-            allGames = games;
-            populateLeagues(allGames);
-            renderGames(allGames);
-        })
-        .catch(error => {
-            loadingDiv.style.display = 'none';
-            gamesGrid.innerHTML = `<p class="text-red-500 text-center w-full">Erro ao carregar jogos: ${error.message}</p>`;
-            console.error("Detalhes do erro na API:", error);
-        });
-}
-
-function populateLeagues(games) {
-    const leagueFilter = document.getElementById('leagueFilter');
-    leagueFilter.innerHTML = '<option value="">Todas as Ligas</option>';
-    const leagues = [...new Set(games.map(game => game[1]))].sort();
-    leagues.forEach(league => {
-        const option = document.createElement('option');
-        option.value = league;
-        option.textContent = league;
-        leagueFilter.appendChild(option);
-    });
-}
-
-function formatTransmissao(transmissaoStr) {
-    if (!transmissaoStr ||
-        transmissaoStr.toLowerCase().includes('sem transmissão') ||
-        transmissaoStr.toLowerCase().includes('não informado')) {
-        return '<span class="text-gray-500 italic dark:text-slate-400">Sem transmissão</span>';
-    }
-    const channels = transmissaoStr.split(',').map(ch => ch.trim()).filter(Boolean);
-    return channels.map(channel => {
-        let logoUrl = null;
-        let logoAlt = channel;
-        for (const [key, url] of Object.entries(channelLogos)) {
-            if (channel.toLowerCase().startsWith(key.toLowerCase()) ||
-                channel.toLowerCase().includes(key.toLowerCase())) {
-                logoUrl = url;
-                logoAlt = key;
-                break;
-            }
-        }
-        const imgTag = logoUrl
-            ? `<img src="${logoUrl}" alt="${logoAlt}" class="h-4 w-auto inline-block" onerror="this.style.display='none'">`
-            : '';
-        return `<span class="inline-flex items-center gap-1 bg-slate-700 text-white text-xs font-medium px-2 py-0.5 rounded-full mr-1 mb-1">${imgTag}<span>${channel}</span></span>`;
-    }).join('');
-}
-
-function toggleFavorite(teamName) {
-    const index = favoriteTeams.indexOf(teamName);
-    if (index === -1) { favoriteTeams.push(teamName); } else { favoriteTeams.splice(index, 1); }
-    localStorage.setItem('favoriteTeams', JSON.stringify(favoriteTeams));
-    filterGames();
-}
-
-function getStatusBadge(status) {
-    switch (status) {
-        case 'NS': return { text: 'Não iniciado', cls: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
-        case '1H': case '2H': case 'ET': return { text: '🔴 Ao Vivo', cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 animate-pulse' };
-        case 'HT': return { text: 'Intervalo', cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' };
-        case 'FT': case 'AET': case 'PEN': return { text: 'Encerrado', cls: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' };
-        default: return { text: status, cls: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
-    }
-}
-
-function createCardElement(game) {
-    const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
-    const card = document.createElement('div');
-    card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700 relative';
-    const isFavMand = favoriteTeams.includes(mandante);
-    const isFavVisit = favoriteTeams.includes(visitante);
-    const mandanteEscaped = mandante.replace(/'/g, "\\'");
-    const visitanteEscaped = visitante.replace(/'/g, "\\'");
-    const badge = getStatusBadge(status);
-    card.innerHTML = `
-        <div class="mb-2 flex justify-between items-center text-sm gap-2">
-            <span class="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded truncate max-w-[40%]">${liga}</span>
-            <span class="text-gray-500 dark:text-slate-400 text-xs">${horario}</span>
-            <span class="text-xs font-semibold px-2 py-1 rounded-full ${badge.cls}">${badge.text}</span>
-        </div>
-        <div class="flex-grow flex flex-col justify-between">
-            <div class="text-base font-bold text-center my-2 dark:text-slate-100 leading-snug">
-                <span onclick="toggleFavorite('${mandanteEscaped}')" class="cursor-pointer">${isFavMand ? '⭐' : '☆'}</span>
-                ${mandante}
-                <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span>
-                <span onclick="toggleFavorite('${visitanteEscaped}')" class="cursor-pointer">${isFavVisit ? '⭐' : '☆'}</span>
-                ${visitante}
-            </div>
-        </div>
-        <div class="mt-3 px-2 py-2 bg-emerald-50 dark:bg-slate-700 rounded text-center flex flex-wrap justify-center gap-1">
-            ${formatTransmissao(transmissao)}
-        </div>
-    `;
-    return card;
-}
-
-function updateAutoRefreshHeader() {
-    let header = document.getElementById('auto-refresh-header');
-    if (!header) {
-        header = document.createElement('div');
-        header.id = 'auto-refresh-header';
-        header.className = 'w-full text-center text-xs text-blue-600 dark:text-blue-400 py-1 font-medium';
-        const loadingDiv = document.getElementById('loading');
-        if (loadingDiv && loadingDiv.parentNode) loadingDiv.parentNode.insertBefore(header, loadingDiv.nextSibling);
-    }
-    header.textContent = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
-}
-
-function removeAutoRefreshHeader() {
-    const header = document.getElementById('auto-refresh-header');
-    if (header) header.remove();
-    autoRefreshSecondsLeft = 0;
-    if (autoRefreshCountdownInterval) { clearInterval(autoRefreshCountdownInterval); autoRefreshCountdownInterval = null; }
-}
-
-function startAutoRefresh() {
-    if (autoRefreshInterval) return;
-    autoRefreshSecondsLeft = 60;
-    updateAutoRefreshHeader();
-    autoRefreshCountdownInterval = setInterval(() => {
-        autoRefreshSecondsLeft--;
-        if (autoRefreshSecondsLeft <= 0) autoRefreshSecondsLeft = 0;
-        updateAutoRefreshHeader();
-    }, 1000);
-    autoRefreshInterval = setInterval(() => { autoRefreshSecondsLeft = 60; fetchGames(); }, 60000);
-}
-
-function stopAutoRefresh() {
-    if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
-    removeAutoRefreshHeader();
-}
-
-function renderGames(gamesToRender) {
-    const gamesGrid = document.getElementById('games-grid');
-    gamesGrid.innerHTML = '';
-    if (gamesToRender.length === 0) {
-        gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full dark:text-slate-400">Nenhum jogo encontrado.</p>';
+function fetchGames(force=false){
+  if(cooldownSecondsLeft>0&&!force)return;
+  const loadingDiv=document.getElementById('loading');
+  const gamesGrid=document.getElementById('games-grid');
+  loadingDiv.classList.remove('hidden');
+  gamesGrid.innerHTML='';
+  fetch(`${API_URL}?t=${Date.now()}${force?'&force=1':''}`)
+    .then(async r=>{const t=await r.text();if(!r.ok)throw new Error(`Erro ${r.status}`);try{return JSON.parse(t);}catch{throw new Error('Resposta inválida');}})
+    .then(data=>{
+      loadingDiv.classList.add('hidden');
+      const games=data.slice(2);
+      if(!games.length||(games.length>0&&typeof games[0]==='string')){
+        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-slate-400 text-sm">${games[0]||'Nenhum jogo encontrado.'}</p></div>`;
         return;
-    }
-    const favoriteGames = [];
-    const otherGames = [];
-    gamesToRender.forEach(game => {
-        const [, , , mandante, , visitante] = game;
-        if (favoriteTeams.includes(mandante) || favoriteTeams.includes(visitante)) { favoriteGames.push(game); } else { otherGames.push(game); }
+      }
+      allGames=games;
+      populateLeagues(allGames);
+      renderGames(allGames);
+      if(!force)startCooldown();
+    })
+    .catch(err=>{
+      loadingDiv.classList.add('hidden');
+      gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-red-400 text-sm">Erro: ${err.message}</p></div>`;
     });
-    if (favoriteGames.length > 0) {
-        const favSection = document.createElement('div');
-        const favTitle = document.createElement('h2');
-        favTitle.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
-        favTitle.innerHTML = '⭐ Seus Jogos';
-        favSection.appendChild(favTitle);
-        const favGrid = document.createElement('div');
-        favGrid.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
-        favoriteGames.forEach(game => favGrid.appendChild(createCardElement(game)));
-        favSection.appendChild(favGrid);
-        gamesGrid.appendChild(favSection);
-    }
-    if (otherGames.length > 0) {
-        const grouped = new Map();
-        otherGames.forEach(game => {
-            const liga = game[1];
-            if (!grouped.has(liga)) grouped.set(liga, []);
-            grouped.get(liga).push(game);
-        });
-        Array.from(grouped.keys()).sort().forEach(liga => {
-            const section = document.createElement('div');
-            const title = document.createElement('h2');
-            title.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
-            title.innerHTML = `⚽ ${liga}`;
-            section.appendChild(title);
-            const gamesContainer = document.createElement('div');
-            gamesContainer.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
-            grouped.get(liga).forEach(game => gamesContainer.appendChild(createCardElement(game)));
-            section.appendChild(gamesContainer);
-            gamesGrid.appendChild(section);
-        });
-    }
-    const hasLiveGames = gamesToRender.some(game => ['1H', '2H', 'ET', 'HT'].includes(game[6]));
-    if (hasLiveGames) { startAutoRefresh(); } else { stopAutoRefresh(); }
 }
 
-function filterGames() {
-    const searchInput = document.getElementById('searchInput').value.trim().toLowerCase();
-    const leagueFilter = document.getElementById('leagueFilter').value;
-    const filteredGames = allGames.filter(game => {
-        const [, liga, , mandante, , visitante] = game;
-        const matchesSearch = !searchInput || mandante.toLowerCase().includes(searchInput) || visitante.toLowerCase().includes(searchInput);
-        const matchesLeague = !leagueFilter || liga === leagueFilter;
-        return matchesSearch && matchesLeague;
-    });
-    renderGames(filteredGames);
+function startCooldown(){
+  if(cooldownInterval)return;
+  cooldownSecondsLeft=60;
+  const btn=document.getElementById('btn-fetch-games');
+  const btnText=document.getElementById('btn-fetch-text');
+  const cdText=document.getElementById('cooldown-text');
+  const cdBarC=document.getElementById('cooldown-bar-container');
+  const cdBar=document.getElementById('cooldown-bar');
+  btn.disabled=true;
+  cdBarC.classList.remove('hidden');
+  cdText.classList.remove('hidden');
+  cdBar.classList.remove('cooldown-bar');
+  void cdBar.offsetWidth;
+  cdBar.classList.add('cooldown-bar');
+  const upd=()=>{btnText.textContent=`⏳ Aguarde ${cooldownSecondsLeft}s`;cdText.textContent=`Nova busca disponível em ${cooldownSecondsLeft}s`;};
+  upd();
+  cooldownInterval=setInterval(()=>{
+    cooldownSecondsLeft--;
+    if(cooldownSecondsLeft<=0){
+      clearInterval(cooldownInterval);cooldownInterval=null;cooldownSecondsLeft=0;
+      btn.disabled=false;btnText.textContent='⚽ Buscar Jogos de Hoje';
+      cdText.classList.add('hidden');cdBarC.classList.add('hidden');
+    }else{upd();}
+  },1000);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const themeToggle = document.getElementById('theme-toggle');
-    const htmlElement = document.documentElement;
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) { htmlElement.classList.add('dark'); themeToggle.textContent = '☀️'; }
-    else { htmlElement.classList.remove('dark'); themeToggle.textContent = '🌙'; }
-    themeToggle.addEventListener('click', () => {
-        htmlElement.classList.toggle('dark');
-        if (htmlElement.classList.contains('dark')) { themeToggle.textContent = '☀️'; localStorage.setItem('theme', 'dark'); }
-        else { themeToggle.textContent = '🌙'; localStorage.setItem('theme', 'light'); }
+function populateLeagues(games){
+  const sel=document.getElementById('leagueFilter');
+  sel.innerHTML='<option value="">Todas as Ligas</option>';
+  [...new Set(games.map(g=>g[1]))].sort().forEach(liga=>{
+    const o=document.createElement('option');o.value=liga;o.textContent=liga;sel.appendChild(o);
+  });
+}
+
+function formatTransmissao(str){
+  if(!str||str.toLowerCase().includes('sem transmissão')||str.toLowerCase().includes('não informado'))
+    return '<span class="text-slate-500 text-xs italic">Sem transmissão</span>';
+  return str.split(',').map(ch=>ch.trim()).filter(Boolean).map(channel=>{
+    let logo=null;
+    const cl=channel.toLowerCase().replace(/\s+/g,'');
+    for(const[k,u]of Object.entries(channelLogos)){
+      if(cl===k||cl.startsWith(k)||channel.toLowerCase().startsWith(k)){logo=u;break;}
+    }
+    const img=logo?`<img src="${logo}" alt="" class="h-3.5 w-auto inline-block flex-shrink-0" onerror="this.style.display='none'">`:'' ;
+    return `<span class="inline-flex items-center gap-1 bg-slate-800 dark:bg-slate-700 text-slate-200 text-xs px-1.5 py-0.5 rounded font-medium">${img}<span>${channel}</span></span>`;
+  }).join('');
+}
+
+function toggleFavorite(name){
+  const i=favoriteTeams.indexOf(name);
+  if(i===-1){favoriteTeams.push(name);}else{favoriteTeams.splice(i,1);}
+  localStorage.setItem('favoriteTeams',JSON.stringify(favoriteTeams));
+  filterGames();
+}
+
+function getStatusBadge(s){
+  if(s==='NS')return'<span class="text-xs text-slate-500">Não iniciado</span>';
+  if(['1H','2H','ET'].includes(s))return'<span class="inline-flex items-center gap-1 text-xs font-bold text-red-500 live-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Ao Vivo</span>';
+  if(s==='HT')return'<span class="text-xs font-medium text-yellow-500">Intervalo</span>';
+  if(['FT','AET','PEN'].includes(s))return'<span class="text-xs text-slate-500">Encerrado</span>';
+  return`<span class="text-xs text-slate-500">${s}</span>`;
+}
+
+function escudo(logo,nome){
+  const ini=nome.charAt(0);
+  const fallback=`<span class="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">${ini}</span>`;
+  if(!logo)return fallback;
+  return`<img src="${logo}" alt="${nome}" class="w-7 h-7 object-contain flex-shrink-0" onerror="this.outerHTML='${fallback.replace(/'/g,'"')}'" >`;
+}
+
+function createGameRow(game){
+  const[horario,,, mandante,placar,visitante,status,transmissao,logoM,logoV]=game;
+  const fM=favoriteTeams.includes(mandante);
+  const fV=favoriteTeams.includes(visitante);
+  const mE=mandante.replace(/'/g,"\\'");
+  const vE=visitante.replace(/'/g,"\\'");
+  const row=document.createElement('div');
+  row.className='game-row flex items-center gap-2 sm:gap-3 px-3 py-2.5 rounded-lg transition-colors';
+  row.innerHTML=`
+    <div class="w-16 flex-shrink-0 text-center">
+      <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">${horario}</div>
+      <div class="mt-0.5">${getStatusBadge(status)}</div>
+    </div>
+    <div class="flex items-center gap-1.5 flex-1 justify-end min-w-0">
+      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate text-right">${mandante}</span>
+      ${escudo(logoM,mandante)}
+    </div>
+    <div class="flex-shrink-0 w-14 text-center">
+      <span class="text-base font-black text-slate-800 dark:text-white tracking-tight">${placar}</span>
+    </div>
+    <div class="flex items-center gap-1.5 flex-1 justify-start min-w-0">
+      ${escudo(logoV,visitante)}
+      <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${visitante}</span>
+    </div>
+    <div class="flex-shrink-0 flex flex-col items-end gap-1 min-w-[90px] max-w-[150px]">
+      <div class="flex flex-wrap justify-end gap-1">${formatTransmissao(transmissao)}</div>
+      <div class="flex gap-1">
+        <button onclick="toggleFavorite('${mE}')" class="text-base p-1 hover:scale-125 transition-transform" style="min-width:28px;min-height:28px">${fM?'⭐':'☆'}</button>
+        <button onclick="toggleFavorite('${vE}')" class="text-base p-1 hover:scale-125 transition-transform" style="min-width:28px;min-height:28px">${fV?'⭐':'☆'}</button>
+      </div>
+    </div>`;
+  return row;
+}
+
+function buildSection(title,logoUrl,games){
+  const sec=document.createElement('div');
+  sec.className='bg-white dark:bg-[#111827] rounded-xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800';
+  const logoEl=logoUrl?`<img src="${logoUrl}" alt="" class="w-5 h-5 object-contain" onerror="this.style.display='none'">`:'' ;
+  const hdr=document.createElement('div');
+  hdr.className='flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-[#0f172a] border-b border-slate-100 dark:border-slate-800';
+  hdr.innerHTML=`${logoEl}<span class="text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-400">${title}</span><span class="ml-auto text-xs text-slate-400">${games.length} jogo${games.length!==1?'s':''}</span>`;
+  sec.appendChild(hdr);
+  const list=document.createElement('div');
+  list.className='divide-y divide-slate-50 dark:divide-slate-800';
+  games.forEach(g=>list.appendChild(createGameRow(g)));
+  sec.appendChild(list);
+  return sec;
+}
+
+function renderGames(games){
+  const grid=document.getElementById('games-grid');
+  grid.innerHTML='';
+  if(!games.length){grid.innerHTML='<div class="py-12 text-center"><p class="text-slate-400 text-sm">Nenhum jogo encontrado.</p></div>';return;}
+  const favs=games.filter(g=>favoriteTeams.includes(g[3])||favoriteTeams.includes(g[5]));
+  const others=games.filter(g=>!favoriteTeams.includes(g[3])&&!favoriteTeams.includes(g[5]));
+  if(favs.length)grid.appendChild(buildSection('⭐ Seus Jogos',null,favs));
+  if(others.length){
+    const grouped=new Map();
+    others.forEach(g=>{if(!grouped.has(g[1]))grouped.set(g[1],{logo:g[10]||'',games:[]});grouped.get(g[1]).games.push(g);});
+    Array.from(grouped.keys()).sort().forEach(liga=>{
+      const{logo,games:lg}=grouped.get(liga);
+      grid.appendChild(buildSection(liga,logo,lg));
     });
-    document.getElementById('searchInput').addEventListener('input', filterGames);
-    document.getElementById('leagueFilter').addEventListener('change', filterGames);
-    const btnFetchGames = document.getElementById('btn-fetch-games');
-    btnFetchGames.addEventListener('click', fetchGames);
-    // Botão forçar refresh (discreto, abaixo do botão principal)
-    const forceBtn = document.createElement('button');
-    forceBtn.textContent = '↺ Forçar atualização';
-    forceBtn.className = 'text-xs text-gray-400 underline cursor-pointer bg-transparent border-none block mx-auto mt-1 dark:text-slate-500';
-    forceBtn.onclick = () => {
-        fetchGames(true);
-    };
-    btnFetchGames.insertAdjacentElement('afterend', forceBtn);
+  }
+  const hasLive=games.some(g=>['1H','2H','ET','HT'].includes(g[6]));
+  if(hasLive){startAutoRefresh();}else{stopAutoRefresh();}
+}
+
+function filterGames(){
+  const s=document.getElementById('searchInput').value.trim().toLowerCase();
+  const l=document.getElementById('leagueFilter').value;
+  document.getElementById('filter-badge').classList.toggle('hidden',!(s||l));
+  renderGames(allGames.filter(g=>{
+    const ms=!s||g[3].toLowerCase().includes(s)||g[5].toLowerCase().includes(s);
+    const ml=!l||g[1]===l;
+    return ms&&ml;
+  }));
+}
+
+function clearFilters(){
+  document.getElementById('searchInput').value='';
+  document.getElementById('leagueFilter').value='';
+  document.getElementById('filter-badge').classList.add('hidden');
+  filterGames();
+}
+
+function startAutoRefresh(){
+  if(autoRefreshInterval)return;
+  autoRefreshSecondsLeft=60;
+  const upd=()=>{const el=document.getElementById('auto-refresh-header');if(el){el.classList.remove('hidden');el.textContent=`🔄 Atualizando automaticamente em ${autoRefreshSecondsLeft}s`;}};
+  upd();
+  autoRefreshCountdownInterval=setInterval(()=>{autoRefreshSecondsLeft=Math.max(0,autoRefreshSecondsLeft-1);upd();},1000);
+  autoRefreshInterval=setInterval(()=>{autoRefreshSecondsLeft=60;fetchGames();},60000);
+}
+
+function stopAutoRefresh(){
+  if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;}
+  if(autoRefreshCountdownInterval){clearInterval(autoRefreshCountdownInterval);autoRefreshCountdownInterval=null;}
+  const el=document.getElementById('auto-refresh-header');if(el)el.classList.add('hidden');
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  const tg=document.getElementById('theme-toggle');
+  const html=document.documentElement;
+  const saved=localStorage.getItem('theme');
+  const dark=saved==='dark'||(!saved&&window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if(dark){html.classList.add('dark');tg.textContent='☀️';}else{html.classList.remove('dark');tg.textContent='🌙';}
+  tg.addEventListener('click',()=>{
+    html.classList.toggle('dark');
+    const d=html.classList.contains('dark');
+    tg.textContent=d?'☀️':'🌙';
+    localStorage.setItem('theme',d?'dark':'light');
+  });
+  document.getElementById('btn-fetch-games').addEventListener('click',()=>fetchGames(false));
+  document.getElementById('btn-force-refresh').addEventListener('click',()=>fetchGames(true));
+  document.getElementById('btn-toggle-filters').addEventListener('click',()=>{
+    filtersOpen=!filtersOpen;
+    document.getElementById('filter-panel').classList.toggle('open',filtersOpen);
+  });
+  document.getElementById('btn-clear-filters').addEventListener('click',clearFilters);
+  document.getElementById('searchInput').addEventListener('input',filterGames);
+  document.getElementById('leagueFilter').addEventListener('change',filterGames);
 });
