@@ -123,7 +123,7 @@ function toggleFavorite(name){
 }
 
 function getStatusBadge(s){
-  if(s==='NS')return'<span class="text-xs text-slate-500">Não iniciado</span>';
+  if(s==='NS')return'<span class="text-xs text-slate-500 whitespace-nowrap">Não iniciado</span>';
   if(['1H','2H','ET'].includes(s))return'<span class="inline-flex items-center gap-1 text-xs font-bold text-red-500 live-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Ao Vivo</span>';
   if(s==='HT')return'<span class="text-xs font-medium text-yellow-500">Intervalo</span>';
   if(['FT','AET','PEN'].includes(s))return'<span class="text-xs text-slate-500">Encerrado</span>';
