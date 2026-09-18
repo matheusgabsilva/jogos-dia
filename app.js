@@ -1,8 +1,10 @@
-const API_URL = 'https://api.matheusgabsilva.digital'; // REPLACE WITH ACTUAL WORKER URL AFTER DEPLOYMENT
+const API_URL = 'https://api.matheusgabsilva.digital';
 let allGames = [];
 let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
-let autoRefreshInterval = null; // Stores the setInterval ID for auto-refresh
-let autoRefreshSecondsLeft = 0; // Countdown for header display
+let autoRefreshInterval = null;
+let autoRefreshCountdownInterval = null;
+let autoRefreshSecondsLeft = 0;
+
 const channelLogos = {
     'globo': 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/24/TV_Globo_logo.svg/320px-TV_Globo_logo.svg.png',
     'sportv': 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/SporTV_logo.svg/320px-SporTV_logo.svg.png',
@@ -24,19 +26,13 @@ const channelLogos = {
 function fetchGames() {
     const loadingDiv = document.getElementById('loading');
     const gamesGrid = document.getElementById('games-grid');
-
     loadingDiv.style.display = 'block';
     gamesGrid.innerHTML = '';
-
-    // Cache-buster: add timestamp to force fresh request
     const urlWithCacheBuster = `${API_URL}?t=${new Date().getTime()}`;
-
     fetch(urlWithCacheBuster)
         .then(async response => {
             const text = await response.text();
-            if (!response.ok) {
-                throw new Error(`Erro na rede: ${response.status} - ${text.substring(0, 200)}`);
-            }
+            if (!response.ok) throw new Error(`Erro na rede: ${response.status} - ${text.substring(0, 200)}`);
             try {
                 const data = JSON.parse(text);
                 console.log("Dados recebidos da API:", data);
@@ -47,8 +43,7 @@ function fetchGames() {
         })
         .then(data => {
             loadingDiv.style.display = 'none';
-            // Assuming data is a 2D array where first two rows are headers
-            const games = data.slice(2); // skip header rows
+            const games = data.slice(2);
             allGames = games;
             populateLeagues(allGames);
             renderGames(allGames);
@@ -62,12 +57,8 @@ function fetchGames() {
 
 function populateLeagues(games) {
     const leagueFilter = document.getElementById('leagueFilter');
-    // Clear existing options except the first default one
     leagueFilter.innerHTML = '<option value="">Todas as Ligas</option>';
-
-    // Get unique leagues
-    const leagues = [...new Set(games.map(game => game[1]))].sort(); // index 1 is liga
-
+    const leagues = [...new Set(games.map(game => game[1]))].sort();
     leagues.forEach(league => {
         const option = document.createElement('option');
         option.value = league;
@@ -82,13 +73,10 @@ function formatTransmissao(transmissaoStr) {
         transmissaoStr.toLowerCase().includes('não informado')) {
         return '<span class="text-gray-500 italic dark:text-slate-400">Sem transmissão</span>';
     }
-
     const channels = transmissaoStr.split(',').map(ch => ch.trim()).filter(Boolean);
-
     return channels.map(channel => {
         let logoUrl = null;
         let logoAlt = channel;
-
         for (const [key, url] of Object.entries(channelLogos)) {
             if (channel.toLowerCase().startsWith(key.toLowerCase()) ||
                 channel.toLowerCase().includes(key.toLowerCase())) {
@@ -97,29 +85,28 @@ function formatTransmissao(transmissaoStr) {
                 break;
             }
         }
-
         const imgTag = logoUrl
             ? `<img src="${logoUrl}" alt="${logoAlt}" class="h-4 w-auto inline-block" onerror="this.style.display='none'">`
             : '';
-
-        // Sempre mostra o nome completo do canal (ESPN 2, SporTV 3, etc.)
-        return `<span class="inline-flex items-center gap-1 bg-slate-700 text-white text-xs font-medium px-2 py-0.5 rounded-full mr-1">
-            ${imgTag}
-            <span>${channel}</span>
-        </span>`;
+        return `<span class="inline-flex items-center gap-1 bg-slate-700 text-white text-xs font-medium px-2 py-0.5 rounded-full mr-1 mb-1">${imgTag}<span>${channel}</span></span>`;
     }).join('');
 }
 
 function toggleFavorite(teamName) {
-    // Escape single quotes in teamName for storage? We store as is.
     const index = favoriteTeams.indexOf(teamName);
-    if (index === -1) {
-        favoriteTeams.push(teamName);
-    } else {
-        favoriteTeams.splice(index, 1);
-    }
+    if (index === -1) { favoriteTeams.push(teamName); } else { favoriteTeams.splice(index, 1); }
     localStorage.setItem('favoriteTeams', JSON.stringify(favoriteTeams));
-    filterGames(); // re-render immediately
+    filterGames();
+}
+
+function getStatusBadge(status) {
+    switch (status) {
+        case 'NS': return { text: 'Não iniciado', cls: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
+        case '1H': case '2H': case 'ET': return { text: '🔴 Ao Vivo', cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 animate-pulse' };
+        case 'HT': return { text: 'Intervalo', cls: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' };
+        case 'FT': case 'AET': case 'PEN': return { text: 'Encerrado', cls: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' };
+        default: return { text: status, cls: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300' };
+    }
 }
 
 function createCardElement(game) {
@@ -128,266 +115,140 @@ function createCardElement(game) {
     card.className = 'bg-white rounded-lg shadow-md p-4 flex flex-col h-full dark:bg-slate-800 dark:border-slate-700 relative';
     const isFavMand = favoriteTeams.includes(mandante);
     const isFavVisit = favoriteTeams.includes(visitante);
-    // Escape single quotes for inline onclick
     const mandanteEscaped = mandante.replace(/'/g, "\\'");
     const visitanteEscaped = visitante.replace(/'/g, "\\'");
-
-    // Status badge mapping
-    let statusText = 'Não iniciado';
-    let statusClass = 'bg-gray-200 text-gray-800';
-    let statusAnimation = '';
-
-    switch (status) {
-        case 'NS':
-            statusText = 'Não iniciado';
-            statusClass = 'bg-gray-200 text-gray-800';
-            break;
-        case '1H':
-        case '2H':
-        case 'ET':
-            statusText = 'Ao Vivo';
-            statusClass = 'bg-green-100 text-green-800 animate-pulse';
-            break;
-        case 'HT':
-            statusText = 'Intervalo';
-            statusClass = 'bg-yellow-100 text-yellow-800';
-            break;
-        case 'FT':
-        case 'AET':
-        case 'PEN':
-            statusText = 'Encerrado';
-            statusClass = 'bg-slate-200 text-slate-800';
-            break;
-        default:
-            statusText = status;
-            statusClass = 'bg-gray-200 text-gray-800';
-    }
-
+    const badge = getStatusBadge(status);
     card.innerHTML = `
-        <div class="mb-2 flex justify-between items-center text-sm position-relative">
-            <span class="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded truncate max-w-[50%]">${liga}</span>
-            <span>${horario}</span>
-            <span class="absolute right-0 top-0 mt-2 mr-2 px-2 py-1 text-xs font-bold rounded ${statusClass} ${statusAnimation}">${statusText}</span>
+        <div class="mb-2 flex justify-between items-center text-sm gap-2">
+            <span class="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded truncate max-w-[40%]">${liga}</span>
+            <span class="text-gray-500 dark:text-slate-400 text-xs">${horario}</span>
+            <span class="text-xs font-semibold px-2 py-1 rounded-full ${badge.cls}">${badge.text}</span>
         </div>
         <div class="flex-grow flex flex-col justify-between">
-            <div class="text-xl font-bold text-center mb-2 dark:text-slate-100">
-                <span onclick="toggleFavorite('${mandanteEscaped}')" class="cursor-pointer text-xl">${isFavMand ? '⭐' : '☆'}</span> ${mandante} <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span> <span onclick="toggleFavorite('${visitanteEscaped}')" class="cursor-pointer text-xl">${isFavVisit ? '⭐' : '☆'}</span> ${visitante}
+            <div class="text-base font-bold text-center my-2 dark:text-slate-100 leading-snug">
+                <span onclick="toggleFavorite('${mandanteEscaped}')" class="cursor-pointer">${isFavMand ? '⭐' : '☆'}</span>
+                ${mandante}
+                <span class="text-gray-500 mx-2 dark:text-slate-400">${placar}</span>
+                <span onclick="toggleFavorite('${visitanteEscaped}')" class="cursor-pointer">${isFavVisit ? '⭐' : '☆'}</span>
+                ${visitante}
             </div>
         </div>
-        <div class="mt-3 px-2 py-1 bg-emerald-100 text-emerald-800 text-sm font-medium rounded text-center dark:bg-emerald-900 dark:text-emerald-200">
+        <div class="mt-3 px-2 py-2 bg-emerald-50 dark:bg-slate-700 rounded text-center flex flex-wrap justify-center gap-1">
             ${formatTransmissao(transmissao)}
         </div>
     `;
     return card;
 }
 
+function updateAutoRefreshHeader() {
+    let header = document.getElementById('auto-refresh-header');
+    if (!header) {
+        header = document.createElement('div');
+        header.id = 'auto-refresh-header';
+        header.className = 'w-full text-center text-xs text-blue-600 dark:text-blue-400 py-1 font-medium';
+        const loadingDiv = document.getElementById('loading');
+        if (loadingDiv && loadingDiv.parentNode) loadingDiv.parentNode.insertBefore(header, loadingDiv.nextSibling);
+    }
+    header.textContent = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
+}
+
+function removeAutoRefreshHeader() {
+    const header = document.getElementById('auto-refresh-header');
+    if (header) header.remove();
+    autoRefreshSecondsLeft = 0;
+    if (autoRefreshCountdownInterval) { clearInterval(autoRefreshCountdownInterval); autoRefreshCountdownInterval = null; }
+}
+
+function startAutoRefresh() {
+    if (autoRefreshInterval) return;
+    autoRefreshSecondsLeft = 60;
+    updateAutoRefreshHeader();
+    autoRefreshCountdownInterval = setInterval(() => {
+        autoRefreshSecondsLeft--;
+        if (autoRefreshSecondsLeft <= 0) autoRefreshSecondsLeft = 0;
+        updateAutoRefreshHeader();
+    }, 1000);
+    autoRefreshInterval = setInterval(() => { autoRefreshSecondsLeft = 60; fetchGames(); }, 60000);
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
+    removeAutoRefreshHeader();
+}
+
 function renderGames(gamesToRender) {
     const gamesGrid = document.getElementById('games-grid');
     gamesGrid.innerHTML = '';
-
     if (gamesToRender.length === 0) {
         gamesGrid.innerHTML = '<p class="text-gray-500 text-center w-full dark:text-slate-400">Nenhum jogo encontrado.</p>';
         return;
     }
-
-    // Separate favorites and others
     const favoriteGames = [];
     const otherGames = [];
-
     gamesToRender.forEach(game => {
-        const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
-        if (favoriteTeams.includes(mandante) || favoriteTeams.includes(visitante)) {
-            favoriteGames.push(game);
-        } else {
-            otherGames.push(game);
-        }
+        const [, , , mandante, , visitante] = game;
+        if (favoriteTeams.includes(mandante) || favoriteTeams.includes(visitante)) { favoriteGames.push(game); } else { otherGames.push(game); }
     });
-
-    // Render favorite games section if any
     if (favoriteGames.length > 0) {
         const favSection = document.createElement('div');
         const favTitle = document.createElement('h2');
         favTitle.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
         favTitle.innerHTML = '⭐ Seus Jogos';
         favSection.appendChild(favTitle);
-
         const favGrid = document.createElement('div');
         favGrid.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
-
-        favoriteGames.forEach(game => {
-            favGrid.appendChild(createCardElement(game));
-        });
-
+        favoriteGames.forEach(game => favGrid.appendChild(createCardElement(game)));
         favSection.appendChild(favGrid);
         gamesGrid.appendChild(favSection);
     }
-
-    // Render other games grouped by league
     if (otherGames.length > 0) {
-        // Group by league (index 1)
         const grouped = new Map();
         otherGames.forEach(game => {
             const liga = game[1];
-            if (!grouped.has(liga)) {
-                grouped.set(liga, []);
-            }
+            if (!grouped.has(liga)) grouped.set(liga, []);
             grouped.get(liga).push(game);
         });
-
-        // Sort leagues alphabetically
-        const sortedLeagues = Array.from(grouped.keys()).sort();
-
-        sortedLeagues.forEach(liga => {
-            const ligaGames = grouped.get(liga);
-
-            // Create section container
+        Array.from(grouped.keys()).sort().forEach(liga => {
             const section = document.createElement('div');
-
-            // League title
             const title = document.createElement('h2');
             title.className = 'text-xl font-bold text-slate-700 dark:text-slate-200 border-b-2 border-emerald-500 dark:border-emerald-600 pb-2 mb-4 mt-8 flex items-center gap-2';
             title.innerHTML = `⚽ ${liga}`;
             section.appendChild(title);
-
-            // Grid for games of this league
             const gamesContainer = document.createElement('div');
             gamesContainer.className = 'grid gap-5 sm:grid-cols-2 lg:grid-cols-3';
-
-            // Create cards for each game in this league
-            ligaGames.forEach(game => {
-                gamesContainer.appendChild(createCardElement(game));
-            });
-
+            grouped.get(liga).forEach(game => gamesContainer.appendChild(createCardElement(game)));
             section.appendChild(gamesContainer);
             gamesGrid.appendChild(section);
         });
     }
-
-// Auto-refresh for live games
-    const hasLiveGames = gamesToRender.some(game => {
-        const status = game[6]; // status is at index 6
-        return ['1H', '2H', 'ET', 'HT'].includes(status);
-    });
-
-    if (hasLiveGames && !autoRefreshInterval) {
-        // Start auto-refresh
-        autoRefreshInterval = setInterval(() => {
-            fetchGames();
-            // Update the header indicator
-            updateAutoRefreshHeader(60);
-        }, 60000);
-
-        // Show initial header indicator
-        updateAutoRefreshHeader(60);
-    } else if (!hasLiveGames && autoRefreshInterval) {
-        // Stop auto-refresh if no live games
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
-        removeAutoRefreshHeader();
-    }
-
-// Auto-refresh header functions
-function updateAutoRefreshHeader(seconds) {
-    autoRefreshSecondsLeft = seconds;
-    const header = document.getElementById('auto-refresh-header');
-    if (!header) {
-        // Create header element
-        const headerDiv = document.createElement('div');
-        headerDiv.id = 'auto-refresh-header';
-        headerDiv.className = 'text-xs text-blue-600 dark:text-blue-400 mb-2';
-        headerDiv.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
-
-        // Insert after the loading div or at the top of games container
-        const loadingDiv = document.getElementById('loading');
-        const gamesGrid = document.getElementById('games-grid');
-        if (loadingDiv && loadingDiv.parentNode) {
-            loadingDiv.parentNode.insertBefore(headerDiv, loadingDiv.nextSibling);
-        } else if (gamesGrid && gamesGrid.parentNode) {
-            gamesGrid.parentNode.insertBefore(headerDiv, gamesGrid);
-        } else {
-            document.body.insertBefore(headerDiv, document.body.firstChild);
-        }
-    } else {
-        header.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
-    }
+    const hasLiveGames = gamesToRender.some(game => ['1H', '2H', 'ET', 'HT'].includes(game[6]));
+    if (hasLiveGames) { startAutoRefresh(); } else { stopAutoRefresh(); }
 }
-
-function removeAutoRefreshHeader() {
-    const header = document.getElementById('auto-refresh-header');
-    if (header) {
-        header.remove();
-    }
-    autoRefreshSecondsLeft = 0;
-}
-
-// Update fetchGames to handle countdown
-const originalFetchGames = fetchGames;
-function fetchGames() {
-    // Update countdown if active
-    if (autoRefreshInterval && autoRefreshSecondsLeft > 0) {
-        autoRefreshSecondsLeft--;
-        const header = document.getElementById('auto-refresh-header');
-        if (header) {
-            header.innerHTML = `🔄 Atualizando em ${autoRefreshSecondsLeft}s...`;
-        }
-
-        // If countdown reaches 0, it will be updated on next interval tick
-    }
-
-    // Call original fetchGames
-    return originalFetchGames.call(this);
-}
-
-// Rebind fetchGames to maintain correct context
-window.fetchGames = fetchGames;
 
 function filterGames() {
     const searchInput = document.getElementById('searchInput').value.trim().toLowerCase();
     const leagueFilter = document.getElementById('leagueFilter').value;
-
     const filteredGames = allGames.filter(game => {
-        const [horario, liga, rodada, mandante, placar, visitante, status, transmissao] = game;
-        const matchesSearch = !searchInput ||
-            mandante.toLowerCase().includes(searchInput) ||
-            visitante.toLowerCase().includes(searchInput);
+        const [, liga, , mandante, , visitante] = game;
+        const matchesSearch = !searchInput || mandante.toLowerCase().includes(searchInput) || visitante.toLowerCase().includes(searchInput);
         const matchesLeague = !leagueFilter || liga === leagueFilter;
         return matchesSearch && matchesLeague;
     });
-
     renderGames(filteredGames);
 }
 
-// Execute when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // Dark mode initialization
     const themeToggle = document.getElementById('theme-toggle');
     const htmlElement = document.documentElement;
-
-    // Check localStorage or system preference
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-        htmlElement.classList.add('dark');
-        themeToggle.textContent = '☀️';
-    } else {
-        htmlElement.classList.remove('dark');
-        themeToggle.textContent = '🌙';
-    }
-
-    // Theme toggle event listener
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) { htmlElement.classList.add('dark'); themeToggle.textContent = '☀️'; }
+    else { htmlElement.classList.remove('dark'); themeToggle.textContent = '🌙'; }
     themeToggle.addEventListener('click', () => {
         htmlElement.classList.toggle('dark');
-        if (htmlElement.classList.contains('dark')) {
-            themeToggle.textContent = '☀️';
-            localStorage.setItem('theme', 'dark');
-        } else {
-            themeToggle.textContent = '🌙';
-            localStorage.setItem('theme', 'light');
-        }
+        if (htmlElement.classList.contains('dark')) { themeToggle.textContent = '☀️'; localStorage.setItem('theme', 'dark'); }
+        else { themeToggle.textContent = '🌙'; localStorage.setItem('theme', 'light'); }
     });
-
-    // Add event listeners after DOM is loaded
     document.getElementById('searchInput').addEventListener('input', filterGames);
     document.getElementById('leagueFilter').addEventListener('change', filterGames);
     document.getElementById('btn-fetch-games').addEventListener('click', fetchGames);
