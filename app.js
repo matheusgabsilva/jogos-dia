@@ -37,12 +37,18 @@ function fetchGames(force=false){
     .then(async r=>{const t=await r.text();if(!r.ok)throw new Error(`Erro ${r.status}`);try{return JSON.parse(t);}catch{throw new Error('Resposta inválida');}})
     .then(data=>{
       loadingDiv.classList.add('hidden');
-      const games=data.slice(2);
-      if(!games.length||(games.length>0&&typeof games[0]==='string')){
-        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-slate-400 text-sm">${games[0]||'Nenhum jogo encontrado.'}</p></div>`;
+      // Handle new structured response
+      if (!data.ok) {
+        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-red-400 text-sm">${data.error?.message||'Erro desconhecido.'}</p></div>`;
         return;
       }
-      allGames=games;
+
+      if (!data.games || data.games.length===0) {
+        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-slate-400 text-sm">Nenhum jogo encontrado.</p></div>`;
+        return;
+      }
+
+      allGames=data.games;
       populateLeagues(allGames);
       renderGames(allGames);
       if(!force)startCooldown();
@@ -82,17 +88,20 @@ function startCooldown(){
 function populateLeagues(games){
   const sel=document.getElementById('leagueFilter');
   sel.innerHTML='<option value="">Todas as Ligas</option>';
-  [...new Set(games.map(g=>g[1]))].sort().forEach(liga=>{
+  [...new Set(games.map(g=>g.competition.name))].sort().forEach(liga=>{
     const o=document.createElement('option');o.value=liga;o.textContent=liga;sel.appendChild(o);
   });
 }
 
-function formatTransmissao(str){
-  if(!str||str.toLowerCase().includes('sem transmissão')||str.toLowerCase().includes('não informado'))
-    return '<span class="text-slate-500 text-xs italic">Sem transmissão</span>';
-  return str.split(',').map(ch=>ch.trim()).filter(Boolean).map(channel=>{
+function formatTransmissao(broadcastsArray){
+  if(!broadcastsArray||broadcastsArray.length===0)
+    return '<span class="text-slate-500 text-xs italic">Transmissão não confirmada</span>';
+
+  return broadcastsArray.map(broadcast=>{
     let logo=null;
-    const cl=channel.toLowerCase().replace(/\s+/g,'');
+    const channelName = broadcast.name || '';
+    const cl=channelName.toLowerCase().replace(/\s+/g,'');
+
     // 1. Tenta match exato sem espaços (ex: "sportv2" → 'sportv')
     // 2. Tenta startsWith no original (ex: "SporTV 2" começa com "sportv")
     // 3. Tenta includes como último recurso
@@ -102,16 +111,16 @@ function formatTransmissao(str){
     }
     if (!logo) {
       for (const [k, u] of Object.entries(channelLogos)) {
-        if (channel.toLowerCase().startsWith(k.toLowerCase())) { logo = u; break; }
+        if (channelName.toLowerCase().startsWith(k.toLowerCase())) { logo = u; break; }
       }
     }
     if (!logo) {
       for (const [k, u] of Object.entries(channelLogos)) {
-        if (channel.toLowerCase().includes(k.toLowerCase())) { logo = u; break; }
+        if (channelName.toLowerCase().includes(k.toLowerCase())) { logo = u; break; }
       }
     }
     const img=logo?`<img src="${logo}" alt="" class="h-3.5 w-auto inline-block flex-shrink-0" onerror="this.style.display='none'">`:'' ;
-    return `<span class="inline-flex items-center gap-1 bg-slate-800 dark:bg-slate-700 text-slate-200 text-xs px-1.5 py-0.5 rounded font-medium">${img}<span>${channel}</span></span>`;
+    return `<span class="inline-flex items-center gap-1 bg-slate-800 dark:bg-slate-700 text-slate-200 text-xs px-1.5 py-0.5 rounded font-medium">${img}<span>${channelName}</span></span>`;
   }).join('');
 }
 
@@ -122,12 +131,12 @@ function toggleFavorite(name){
   filterGames();
 }
 
-function getStatusBadge(s){
-  if(s==='NS')return'<span class="text-xs text-slate-500 whitespace-nowrap">Não iniciado</span>';
-  if(['1H','2H','ET'].includes(s))return'<span class="inline-flex items-center gap-1 text-xs font-bold text-red-500 live-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Ao Vivo</span>';
-  if(s==='HT')return'<span class="text-xs font-medium text-yellow-500">Intervalo</span>';
-  if(['FT','AET','PEN'].includes(s))return'<span class="text-xs text-slate-500">Encerrado</span>';
-  return`<span class="text-xs text-slate-500">${s}</span>`;
+function getStatusBadge(statusCode){
+  if(statusCode==='NS')return'<span class="text-xs text-slate-500 whitespace-nowrap">Não iniciado</span>';
+  if(['1H','2H','ET'].includes(statusCode))return'<span class="inline-flex items-center gap-1 text-xs font-bold text-red-500 live-pulse"><span class="w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>Ao Vivo</span>';
+  if(statusCode==='HT')return'<span class="text-xs font-medium text-yellow-500">Intervalo</span>';
+  if(['FT','AET','PEN'].includes(statusCode))return'<span class="text-xs text-slate-500">Encerrado</span>';
+  return`<span class="text-xs text-slate-500">${statusCode}</span>`;
 }
 
 function escudo(logo, nome) {
@@ -143,39 +152,40 @@ function escudo(logo, nome) {
 }
 
 function createGameRow(game){
-  const[horario,,, mandante,placar,visitante,status,transmissao,logoM,logoV]=game;
-  const fM=favoriteTeams.includes(mandante);
-  const fV=favoriteTeams.includes(visitante);
-  const mE=mandante.replace(/'/g,"\\'");
-  const vE=visitante.replace(/'/g,"\\'");
+  const fM=favoriteTeams.includes(game.home.name);
+  const fV=favoriteTeams.includes(game.away.name);
+  const mE=game.home.name.replace(/'/g,"\\'");
+  const vE=game.away.name.replace(/'/g,"\\'");
   const row=document.createElement('div');
   row.className='game-row flex items-center gap-2 sm:gap-3 px-3 py-2.5 rounded-lg transition-colors';
   row.innerHTML = `
   <div class="w-16 flex-shrink-0 text-center">
-    <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">${horario}</div>
-    <div class="mt-0.5">${getStatusBadge(status)}</div>
+    <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-200">${game.kickoff}</div>
+    <div class="mt-0.5">${getStatusBadge(game.status.code)}</div>
   </div>
 
   <div class="flex items-center gap-1.5 flex-1 justify-end min-w-0">
-    <button onclick="toggleFavorite('${mE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${mandante}">${fM?'⭐':'☆'}</button>
-    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate text-right">${mandante}</span>
-    ${escudo(logoM, mandante)}
+    <button onclick="toggleFavorite('${mE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${game.home.name}">${fM?'⭐':'☆'}</button>
+    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate text-right">${game.home.name}</span>
+    ${escudo(game.home.logo, game.home.name)}
   </div>
 
   <div class="flex-shrink-0 w-14 text-center">
-    <span class="text-base font-black text-slate-800 dark:text-white tracking-tight">${placar}</span>
+    <span class="text-base font-black text-slate-800 dark:text-white tracking-tight">
+      ${game.score.home !== null ? game.score.home : '-'} x ${game.score.away !== null ? game.score.away : '-'}
+    </span>
   </div>
 
   <div class="flex items-center gap-1.5 flex-1 justify-start min-w-0">
-    ${escudo(logoV, visitante)}
-    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${visitante}</span>
-    <button onclick="toggleFavorite('${vE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${visitante}">${fV?'⭐':'☆'}</button>
+    ${escudo(game.away.logo, game.away.name)}
+    <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${game.away.name}</span>
+    <button onclick="toggleFavorite('${vE}')" class="text-base p-1 hover:scale-125 transition-transform flex-shrink-0" style="min-width:28px;min-height:28px" title="Favoritar ${game.away.name}">${fV?'⭐':'☆'}</button>
   </div>
 
   <div class="flex-shrink-0 flex flex-wrap justify-end gap-1 min-w-[90px] max-w-[150px]">
-    ${formatTransmissao(transmissao)}
+    ${formatTransmissao(game.broadcasts)}
   </div>
-`;
+  `;
   return row;
 }
 
@@ -198,18 +208,18 @@ function renderGames(games){
   const grid=document.getElementById('games-grid');
   grid.innerHTML='';
   if(!games.length){grid.innerHTML='<div class="py-12 text-center"><p class="text-slate-400 text-sm">Nenhum jogo encontrado.</p></div>';return;}
-  const favs=games.filter(g=>favoriteTeams.includes(g[3])||favoriteTeams.includes(g[5]));
-  const others=games.filter(g=>!favoriteTeams.includes(g[3])&&!favoriteTeams.includes(g[5]));
+  const favs=games.filter(g=>favoriteTeams.includes(g.home.name)||favoriteTeams.includes(g.away.name));
+  const others=games.filter(g=>!favoriteTeams.includes(g.home.name)&&!favoriteTeams.includes(g.away.name));
   if(favs.length)grid.appendChild(buildSection('⭐ Seus Jogos',null,favs));
   if(others.length){
     const grouped=new Map();
-    others.forEach(g=>{if(!grouped.has(g[1]))grouped.set(g[1],{logo:g[10]||'',games:[]});grouped.get(g[1]).games.push(g);});
+    others.forEach(g=>{if(!grouped.has(g.competition.name))grouped.set(g.competition.name,{logo:g.competition.logo||'',games:[]});grouped.get(g.competition.name).games.push(g);});
     Array.from(grouped.keys()).sort().forEach(liga=>{
       const{logo,games:lg}=grouped.get(liga);
       grid.appendChild(buildSection(liga,logo,lg));
     });
   }
-  const hasLive=games.some(g=>['1H','2H','ET','HT'].includes(g[6]));
+  const hasLive=games.some(g=>['1H','2H','ET','HT'].includes(g.status.code));
   if(hasLive){startAutoRefresh();}else{stopAutoRefresh();}
 }
 
@@ -218,8 +228,8 @@ function filterGames(){
   const l=document.getElementById('leagueFilter').value;
   document.getElementById('filter-badge').classList.toggle('hidden',!(s||l));
   renderGames(allGames.filter(g=>{
-    const ms=!s||g[3].toLowerCase().includes(s)||g[5].toLowerCase().includes(s);
-    const ml=!l||g[1]===l;
+    const ms=!s||g.home.name.toLowerCase().includes(s)||g.away.name.toLowerCase().includes(s);
+    const ml=!l||g.competition.name===l;
     return ms&&ml;
   }));
 }
