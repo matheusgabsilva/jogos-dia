@@ -26,20 +26,25 @@ const channelLogos = {
   'record':'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Record_logo.svg/120px-Record_logo.svg.png',
 };
 
-async function fetchGames(force=false){
-  // Protection against simultaneous requests
-  if (isFetching && !force) return;
+async function fetchGames(context = {}) {
+  const { initial = false, manual = false, background = false } = context;
+
+  // Protection against simultaneous requests - never allow concurrency
+  if (isFetching) return;
   isFetching = true;
 
   try {
-    // Show loading state
-    setLoadingState(true);
+    // Show loading state only for initial load and manual refresh
+    // Background refresh should not show loading state
+    if (initial || manual) {
+      setLoadingState(true, true);
+    }
 
     // Hide error/empty states when starting a new fetch
     setErrorState(false);
     setEmptyState(false);
 
-    const response = await fetch(`${API_URL}?t=${Date.now()}${force?'&force=1':''}`);
+    const response = await fetch(`${API_URL}?t=${Date.now()}`);
     const data = await response.json();
 
     // Handle response
@@ -58,7 +63,11 @@ async function fetchGames(force=false){
     renderGames(allGames);
     updateIndicators(allGames);
     updateLastUpdated(data.updatedAt);
-    setLoadingState(false);
+
+    // Hide loading state only if we showed it
+    if (initial || manual) {
+      setLoadingState(false);
+    }
 
     // Handle auto-refresh for live games
     handleAutoRefresh(allGames);
@@ -66,7 +75,6 @@ async function fetchGames(force=false){
   } catch (error) {
     console.error('Erro ao buscar jogos:', error);
     setErrorState(true);
-    setLoadingState(false);
   } finally {
     isFetching = false;
   }
@@ -129,7 +137,7 @@ function getStatusBadge(statusCode){
 }
 
 // UI State Management Functions
-function setLoadingState(isLoading) {
+function setLoadingState(isLoading, hideGamesGrid = true) {
   const loadingSkeleton = document.getElementById('loading-skeleton');
   const statsContainer = document.getElementById('stats-container');
   const lastUpdatedContainer = document.getElementById('last-updated-container');
@@ -139,7 +147,9 @@ function setLoadingState(isLoading) {
     loadingSkeleton.classList.remove('hidden');
     statsContainer.classList.add('hidden');
     lastUpdatedContainer.classList.add('hidden');
-    gamesGrid.classList.add('hidden');
+    if (hideGamesGrid) {
+      gamesGrid.classList.add('hidden');
+    }
   } else {
     loadingSkeleton.classList.add('hidden');
     // stats and last updated will be shown when data is available
@@ -148,8 +158,21 @@ function setLoadingState(isLoading) {
 }
 
 function setErrorState(isError) {
-  // Error state is handled in fetchGames catch block
-  // We could add a dedicated error element if needed
+  const errorState = document.getElementById('error-state');
+  const loadingSkeleton = document.getElementById('loading-skeleton');
+  const statsContainer = document.getElementById('stats-container');
+  const lastUpdatedContainer = document.getElementById('last-updated-container');
+  const gamesGrid = document.getElementById('games-grid');
+
+  if (isError) {
+    errorState.classList.remove('hidden');
+    loadingSkeleton.classList.add('hidden');
+    statsContainer.classList.add('hidden');
+    lastUpdatedContainer.classList.add('hidden');
+    gamesGrid.classList.add('hidden');
+  } else {
+    errorState.classList.add('hidden');
+  }
 }
 
 function setEmptyState(isEmpty) {
@@ -213,7 +236,7 @@ function startAutoRefresh(){
   const upd=()=>{const el=document.getElementById('auto-refresh-header');if(el){el.classList.remove('hidden');el.textContent=`Atualização automática em ${autoRefreshSecondsLeft}s`;}};
   upd();
   autoRefreshCountdownInterval=setInterval(()=>{autoRefreshSecondsLeft=Math.max(0,autoRefreshSecondsLeft-1);upd();},1000);
-  autoRefreshInterval=setInterval(()=>{autoRefreshSecondsLeft=60;fetchGames(false);},60000);
+  autoRefreshInterval=setInterval(()=>{autoRefreshSecondsLeft=60;fetchGames({ background: true });},60000);
 }
 
 function stopAutoRefresh(){
@@ -338,7 +361,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   // Set up event listeners
-  document.getElementById('btn-update-games').addEventListener('click',()=>fetchGames(false));
+  document.getElementById('btn-update-games').addEventListener('click',()=>fetchGames({ manual: true }));
   document.getElementById('btn-toggle-filters').addEventListener('click',()=>{
     filtersOpen=!filtersOpen;
     document.getElementById('filter-panel').classList.toggle('open',filtersOpen);
@@ -348,5 +371,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('leagueFilter').addEventListener('change',filterGames);
 
   // Start automatic loading
-  fetchGames(false);
+  fetchGames({ initial: true });
 });
