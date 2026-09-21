@@ -4,8 +4,7 @@ let favoriteTeams = JSON.parse(localStorage.getItem('favoriteTeams')) || [];
 let autoRefreshInterval = null;
 let autoRefreshCountdownInterval = null;
 let autoRefreshSecondsLeft = 0;
-let cooldownInterval = null;
-let cooldownSecondsLeft = 0;
+let isFetching = false;
 let filtersOpen = false;
 
 const channelLogos = {
@@ -27,63 +26,53 @@ const channelLogos = {
   'record':'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Record_logo.svg/120px-Record_logo.svg.png',
 };
 
-function fetchGames(force=false){
-  if(cooldownSecondsLeft>0&&!force)return;
-  const loadingDiv=document.getElementById('loading');
-  const gamesGrid=document.getElementById('games-grid');
-  loadingDiv.classList.remove('hidden');
-  gamesGrid.innerHTML='';
-  fetch(`${API_URL}?t=${Date.now()}${force?'&force=1':''}`)
-    .then(async r=>{const t=await r.text();if(!r.ok)throw new Error(`Erro ${r.status}`);try{return JSON.parse(t);}catch{throw new Error('Resposta inválida');}})
-    .then(data=>{
-      loadingDiv.classList.add('hidden');
-      // Handle new structured response
-      if (!data.ok) {
-        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-red-400 text-sm">${data.error?.message||'Erro desconhecido.'}</p></div>`;
-        return;
-      }
+async function fetchGames(force=false){
+  // Protection against simultaneous requests
+  if (isFetching && !force) return;
+  isFetching = true;
 
-      if (!data.games || data.games.length===0) {
-        gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-slate-400 text-sm">Nenhum jogo encontrado.</p></div>`;
-        return;
-      }
+  try {
+    // Show loading state
+    setLoadingState(true);
 
-      allGames=data.games;
-      populateLeagues(allGames);
-      renderGames(allGames);
-      if(!force)startCooldown();
-    })
-    .catch(err=>{
-      loadingDiv.classList.add('hidden');
-      gamesGrid.innerHTML=`<div class="py-12 text-center"><p class="text-red-400 text-sm">Erro: ${err.message}</p></div>`;
-    });
+    // Hide error/empty states when starting a new fetch
+    setErrorState(false);
+    setEmptyState(false);
+
+    const response = await fetch(`${API_URL}?t=${Date.now()}${force?'&force=1':''}`);
+    const data = await response.json();
+
+    // Handle response
+    if (!data.ok) {
+      throw new Error(data.error?.message || 'Erro desconhecido');
+    }
+
+    if (!data.games || data.games.length === 0) {
+      setEmptyState(true);
+      return;
+    }
+
+    // Success state
+    allGames = data.games;
+    populateLeagues(allGames);
+    renderGames(allGames);
+    updateIndicators(allGames);
+    updateLastUpdated(data.updatedAt);
+    setLoadingState(false);
+
+    // Handle auto-refresh for live games
+    handleAutoRefresh(allGames);
+
+  } catch (error) {
+    console.error('Erro ao buscar jogos:', error);
+    setErrorState(true);
+    setLoadingState(false);
+  } finally {
+    isFetching = false;
+  }
 }
 
-function startCooldown(){
-  if(cooldownInterval)return;
-  cooldownSecondsLeft=60;
-  const btn=document.getElementById('btn-fetch-games');
-  const btnText=document.getElementById('btn-fetch-text');
-  const cdText=document.getElementById('cooldown-text');
-  const cdBarC=document.getElementById('cooldown-bar-container');
-  const cdBar=document.getElementById('cooldown-bar');
-  btn.disabled=true;
-  cdBarC.classList.remove('hidden');
-  cdText.classList.remove('hidden');
-  cdBar.classList.remove('cooldown-bar');
-  void cdBar.offsetWidth;
-  cdBar.classList.add('cooldown-bar');
-  const upd=()=>{btnText.textContent=`⏳ Aguarde ${cooldownSecondsLeft}s`;cdText.textContent=`Nova busca disponível em ${cooldownSecondsLeft}s`;};
-  upd();
-  cooldownInterval=setInterval(()=>{
-    cooldownSecondsLeft--;
-    if(cooldownSecondsLeft<=0){
-      clearInterval(cooldownInterval);cooldownInterval=null;cooldownSecondsLeft=0;
-      btn.disabled=false;btnText.textContent='⚽ Buscar Jogos de Hoje';
-      cdText.classList.add('hidden');cdBarC.classList.add('hidden');
-    }else{upd();}
-  },1000);
-}
+// Função de cooldown removida - não mais necessária com o botão discreto
 
 function populateLeagues(games){
   const sel=document.getElementById('leagueFilter');
@@ -137,6 +126,100 @@ function getStatusBadge(statusCode){
   if(statusCode==='HT')return'<span class="text-xs font-medium text-yellow-500">Intervalo</span>';
   if(['FT','AET','PEN'].includes(statusCode))return'<span class="text-xs text-slate-500">Encerrado</span>';
   return`<span class="text-xs text-slate-500">${statusCode}</span>`;
+}
+
+// UI State Management Functions
+function setLoadingState(isLoading) {
+  const loadingSkeleton = document.getElementById('loading-skeleton');
+  const statsContainer = document.getElementById('stats-container');
+  const lastUpdatedContainer = document.getElementById('last-updated-container');
+  const gamesGrid = document.getElementById('games-grid');
+
+  if (isLoading) {
+    loadingSkeleton.classList.remove('hidden');
+    statsContainer.classList.add('hidden');
+    lastUpdatedContainer.classList.add('hidden');
+    gamesGrid.classList.add('hidden');
+  } else {
+    loadingSkeleton.classList.add('hidden');
+    // stats and last updated will be shown when data is available
+    gamesGrid.classList.remove('hidden');
+  }
+}
+
+function setErrorState(isError) {
+  // Error state is handled in fetchGames catch block
+  // We could add a dedicated error element if needed
+}
+
+function setEmptyState(isEmpty) {
+  const gamesGrid = document.getElementById('games-grid');
+  if (isEmpty) {
+    gamesGrid.innerHTML = '<div class="py-12 text-center"><p class="text-slate-400 text-sm">Nenhum jogo encontrado.</p></div>';
+    gamesGrid.classList.remove('hidden');
+  } else {
+    // Content will be rendered by renderGames
+  }
+}
+
+function updateIndicators(games) {
+  const totalGames = games.length;
+  const liveGames = games.filter(game => game.status.state === 'live').length;
+  const gamesWithBroadcast = games.filter(game =>
+    Array.isArray(game.broadcasts) && game.broadcasts.length > 0
+  ).length;
+
+  document.getElementById('stat-total-value').textContent = totalGames;
+  document.getElementById('stat-live-value').textContent = liveGames;
+  document.getElementById('stat-broadcast-value').textContent = gamesWithBroadcast;
+
+  // Show stats container when we have data
+  document.getElementById('stats-container').classList.remove('hidden');
+}
+
+function updateLastUpdated(updatedAtString) {
+  if (!updatedAtString) return;
+
+  try {
+    const date = new Date(updatedAtString);
+    const timeString = date.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    document.getElementById('last-updated-time').textContent = timeString;
+    document.getElementById('last-updated-container').classList.remove('hidden');
+  } catch (error) {
+    console.error('Erro ao processar data de atualização:', error);
+    // Keep it hidden if we can't parse the date
+  }
+}
+
+function handleAutoRefresh(games) {
+  // Clear existing auto-refresh timers
+  stopAutoRefresh();
+
+  // Check if there are any live games
+  const hasLiveGames = games.some(game => game.status.state === 'live');
+
+  if (hasLiveGames) {
+    startAutoRefresh();
+  }
+}
+
+// Auto-refresh functions
+function startAutoRefresh(){
+  if(autoRefreshInterval)return;
+  autoRefreshSecondsLeft=60;
+  const upd=()=>{const el=document.getElementById('auto-refresh-header');if(el){el.classList.remove('hidden');el.textContent=`Atualização automática em ${autoRefreshSecondsLeft}s`;}};
+  upd();
+  autoRefreshCountdownInterval=setInterval(()=>{autoRefreshSecondsLeft=Math.max(0,autoRefreshSecondsLeft-1);upd();},1000);
+  autoRefreshInterval=setInterval(()=>{autoRefreshSecondsLeft=60;fetchGames(false);},60000);
+}
+
+function stopAutoRefresh(){
+  if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;}
+  if(autoRefreshCountdownInterval){clearInterval(autoRefreshCountdownInterval);autoRefreshCountdownInterval=null;}
+  const el=document.getElementById('auto-refresh-header');if(el)el.classList.add('hidden');
 }
 
 function escudo(logo, nome) {
@@ -219,7 +302,7 @@ function renderGames(games){
       grid.appendChild(buildSection(liga,logo,lg));
     });
   }
-  const hasLive=games.some(g=>['1H','2H','ET','HT'].includes(g.status.code));
+  const hasLive=games.some(g=>g.status.state === 'live');
   if(hasLive){startAutoRefresh();}else{stopAutoRefresh();}
 }
 
@@ -241,21 +324,6 @@ function clearFilters(){
   filterGames();
 }
 
-function startAutoRefresh(){
-  if(autoRefreshInterval)return;
-  autoRefreshSecondsLeft=60;
-  const upd=()=>{const el=document.getElementById('auto-refresh-header');if(el){el.classList.remove('hidden');el.textContent=`🔄 Atualizando automaticamente em ${autoRefreshSecondsLeft}s`;}};
-  upd();
-  autoRefreshCountdownInterval=setInterval(()=>{autoRefreshSecondsLeft=Math.max(0,autoRefreshSecondsLeft-1);upd();},1000);
-  autoRefreshInterval=setInterval(()=>{autoRefreshSecondsLeft=60;fetchGames();},60000);
-}
-
-function stopAutoRefresh(){
-  if(autoRefreshInterval){clearInterval(autoRefreshInterval);autoRefreshInterval=null;}
-  if(autoRefreshCountdownInterval){clearInterval(autoRefreshCountdownInterval);autoRefreshCountdownInterval=null;}
-  const el=document.getElementById('auto-refresh-header');if(el)el.classList.add('hidden');
-}
-
 document.addEventListener('DOMContentLoaded',()=>{
   const tg=document.getElementById('theme-toggle');
   const html=document.documentElement;
@@ -268,8 +336,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     tg.textContent=d?'☀️':'🌙';
     localStorage.setItem('theme',d?'dark':'light');
   });
-  document.getElementById('btn-fetch-games').addEventListener('click',()=>fetchGames(false));
-  document.getElementById('btn-force-refresh').addEventListener('click',()=>fetchGames(true));
+
+  // Set up event listeners
+  document.getElementById('btn-update-games').addEventListener('click',()=>fetchGames(false));
   document.getElementById('btn-toggle-filters').addEventListener('click',()=>{
     filtersOpen=!filtersOpen;
     document.getElementById('filter-panel').classList.toggle('open',filtersOpen);
@@ -277,4 +346,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btn-clear-filters').addEventListener('click',clearFilters);
   document.getElementById('searchInput').addEventListener('input',filterGames);
   document.getElementById('leagueFilter').addEventListener('change',filterGames);
+
+  // Start automatic loading
+  fetchGames(false);
 });
